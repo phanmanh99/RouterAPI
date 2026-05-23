@@ -1,0 +1,10 @@
+node_modules/
+dist/
+server.exe
+server
+*.log
+.env
+
+# Local config (sensitive info - use *.example.json as template)
+models.json
+opencode.json

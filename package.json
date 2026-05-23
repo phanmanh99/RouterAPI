@@ -1,0 +1,20 @@
+{
+  "name": "opencode-provider-server",
+  "module": "src/index.ts",
+  "type": "module",
+  "scripts": {
+    "dev": "bun run --watch src/index.ts",
+    "start": "bun run src/index.ts",
+    "build": "tsc",
+    "build:bundle": "bun build ./src/index.ts --outdir ./dist --target node",
+    "build:binary": "bun build --compile ./src/index.ts --outfile server",
+    "start:node": "bun run build:bundle && node dist/index.js"
+  },
+  "dependencies": {
+    "elysia": "^1.2.0"
+  },
+  "devDependencies": {
+    "bun-types": "^1.2.0",
+    "typescript": "^5.7.0"
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "backends": {
+    "ollama-llama3": {
+      "provider": "ollama",
+      "model": "llama3.2",
+      "apiKey": "",
+      "baseURL": "http://localhost:11434/v1"
+    },
+    "privategpt-4o": {
+      "provider": "privategpt",
+      "model": "azure-gpt-4o",
+      "apiKey": "${PRIVATEGPT_API_KEY}",
+      "baseURL": "https://privategpt.co"
+    }
+  },
+  "router_models": {
+    "local-llama": {
+      "name": "Local Llama (Ollama)",
+      "fallbacks": ["ollama-llama3"],
+      "limit": { "context": 8192, "output": 2048 }
+    },
+    "my-privategpt": {
+      "name": "PrivateGPT",
+      "fallbacks": ["privategpt-4o"],
+      "limit": { "context": 128000, "output": 4096 }
+    }
+  }
+}

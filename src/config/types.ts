@@ -1,0 +1,27 @@
+export interface BackendConfig {
+  provider: "ollama" | "privategpt"
+  model: string
+  apiKey: string
+  baseURL: string
+}
+
+export interface RouterModelConfig {
+  name: string
+  fallbacks: string[]
+  limit?: {
+    context?: number
+    output?: number
+  }
+  tool_call?: boolean
+  reasoning?: boolean
+}
+
+export interface AppConfig {
+  backends: Record<string, BackendConfig>
+  router_models: Record<string, RouterModelConfig>
+  server?: {
+    port?: number
+    host?: string
+    apiKey?: string
+  }
+}
