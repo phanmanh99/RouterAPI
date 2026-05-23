@@ -1,8 +1,9 @@
 import type { AppConfig } from "../config/types"
-import type { ChatRequest, ChatResponse, SSEChunk } from "../types/openai"
-import { handleChatRequest, handleStreamingRequest } from "../services/fallback"
+import type { ChatRequest, ChatResponse } from "../types/openai"
+import { handleChatRequest } from "../services/fallback"
 import { encodeSSE, encodeSSEDone } from "../utils/sse"
 import { toOpenAIError } from "../utils/errors"
+import type { Logger } from "../utils/logger"
 
 let counter = 0
 function nextId(): string {
@@ -12,7 +13,9 @@ function nextId(): string {
 export async function handleChat(
   body: ChatRequest,
   config: AppConfig,
+  logger?: Logger,
 ): Promise<Response> {
+  logger?.debug("Chat request", { model: body.model, messages: body.messages, stream: body.stream })
   const id = nextId()
   const created = Math.floor(Date.now() / 1000)
 
@@ -34,6 +37,7 @@ export async function handleChat(
     const { response, fallbackHeader } = result
 
     if (body.stream) {
+      logger?.debug("Chat streaming response started", { model: body.model })
       const stream = response as ReadableStream
       const fallback = fallbackHeader
 
@@ -72,6 +76,8 @@ export async function handleChat(
       created,
     }
 
+    logger?.debug("Chat response", { model: body.model, choices: chatResponse.choices })
+
     return new Response(JSON.stringify(chatResponse), {
       headers: {
         "Content-Type": "application/json",
@@ -79,6 +85,7 @@ export async function handleChat(
       },
     })
   } catch (err) {
+    logger?.debug("Chat request failed", { error: err instanceof Error ? err.message : String(err) })
     const openaiErr = toOpenAIError(err)
     const status = openaiErr.error.type === "backend_error" ? 502 : 500
     return new Response(JSON.stringify(openaiErr), {

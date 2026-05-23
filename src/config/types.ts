@@ -23,5 +23,9 @@ export interface AppConfig {
     port?: number
     host?: string
     apiKey?: string
+    logging?: {
+      level?: "debug" | "info" | "warn" | "error"
+      file?: string
+    }
   }
 }
