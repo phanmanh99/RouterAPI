@@ -10,19 +10,29 @@
       "provider": "privategpt",
       "model": "azure-gpt-4o",
       "apiKey": "${PRIVATEGPT_API_KEY}",
-      "baseURL": "https://privategpt.co"
+      "baseURL": "{PRIVATEGPT_URL}"
     }
   },
   "router_models": {
     "local-llama": {
       "name": "Local Llama (Ollama)",
-      "fallbacks": ["ollama-llama3"],
-      "limit": { "context": 8192, "output": 2048 }
+      "fallbacks": [
+        "ollama-llama3"
+      ],
+      "limit": {
+        "context": 8192,
+        "output": 2048
+      }
     },
     "my-privategpt": {
       "name": "PrivateGPT",
-      "fallbacks": ["privategpt-4o"],
-      "limit": { "context": 128000, "output": 4096 }
+      "fallbacks": [
+        "privategpt-4o"
+      ],
+      "limit": {
+        "context": 128000,
+        "output": 4096
+      }
     }
   },
   "server": {
