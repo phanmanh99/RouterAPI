@@ -52,7 +52,7 @@ export function loadConfig(configPath?: string): AppConfig {
     backends: Object.fromEntries(
       Object.entries(config.backends).map(([key, backend]) => [
         key,
-        resolveBackendEnvVars(backend),
+        { ...resolveBackendEnvVars(backend), name: key },
       ]),
     ),
   }
@@ -73,6 +73,22 @@ export function saveConfig(config: AppConfig): void {
 
 export function reloadConfig(): AppConfig {
   return loadConfig(_configPath ?? undefined)
+}
+
+export function updateBackendTokens(
+  name: string,
+  apiKey: string,
+  refreshToken: string,
+): void {
+  const path = _configPath ?? findConfigPath()
+  const raw = readFileSync(path, "utf-8")
+  const current: AppConfig = JSON.parse(raw)
+
+  if (current.backends[name]) {
+    current.backends[name].apiKey = apiKey
+    current.backends[name].refreshToken = refreshToken
+    writeFileSync(path, JSON.stringify(current, null, 2) + "\n")
+  }
 }
 
 function validateBackend(name: string, backend: BackendConfig): void {

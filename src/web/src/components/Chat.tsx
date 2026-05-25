@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from "react"
 import { useTranslation } from "react-i18next"
 import { Send, Trash2, Copy, CheckCheck, Play } from "lucide-react"
+import ReactMarkdown from "react-markdown"
+import remarkGfm from "remark-gfm"
 import type { RouterModelDetail } from "../types"
 import { CardHeader } from "./ui/Card"
 import StatusBadge from "./ui/StatusBadge"
@@ -13,6 +15,16 @@ interface Message {
 
 interface ChatProps {
   onError: (msg: string) => void
+}
+
+function extractText(node: unknown): string {
+  if (typeof node === "string") return node
+  if (typeof node === "number" || typeof node === "boolean") return String(node)
+  if (Array.isArray(node)) return node.map(extractText).join("")
+  if (node && typeof node === "object" && "props" in node) {
+    return extractText((node as any).props.children)
+  }
+  return ""
 }
 
 export default function Chat({ onError }: ChatProps) {
@@ -95,6 +107,24 @@ export default function Chat({ onError }: ChatProps) {
 
         const decoder = new TextDecoder()
         let assistantContent = ""
+        let rafId: number | null = null
+
+        function flushContent() {
+          rafId = null
+          setMessages((prev) => {
+            const updated = [...prev]
+            if (updated.length > 0 && updated[updated.length - 1].role === "assistant") {
+              updated[updated.length - 1] = { role: "assistant", content: assistantContent }
+            }
+            return updated
+          })
+        }
+
+        function scheduleFlush() {
+          if (rafId === null) {
+            rafId = requestAnimationFrame(() => flushContent())
+          }
+        }
 
         setMessages((prev) => [...prev, { role: "assistant", content: "" }])
 
@@ -114,20 +144,16 @@ export default function Chat({ onError }: ChatProps) {
               const delta = parsed.choices?.[0]?.delta?.content
               if (delta) {
                 assistantContent += delta
-                setMessages((prev) => {
-                  const updated = [...prev]
-                  updated[updated.length - 1] = {
-                    role: "assistant",
-                    content: assistantContent,
-                  }
-                  return updated
-                })
+                scheduleFlush()
               }
             } catch {
               // ignore parse errors
             }
           }
         }
+
+        if (rafId !== null) cancelAnimationFrame(rafId)
+        flushContent()
       } else {
         const res = await fetch("/v1/chat/completions", {
           method: "POST",
@@ -258,10 +284,89 @@ export default function Chat({ onError }: ChatProps) {
                 <div className="text-xs text-gray-500 mb-1 font-medium uppercase">
                   {msg.role}
                 </div>
-                <div className="text-sm text-gray-200 whitespace-pre-wrap break-words">
-                  {msg.content || (loading && i === messages.length - 1 && msg.role === "assistant" ? (
-                    <span className="text-gray-500">{t("chat.thinking")}</span>
-                  ) : msg.content)}
+                <div className="text-sm text-gray-200 break-words">
+                  {msg.role === "assistant" && msg.content ? (
+                    <ReactMarkdown
+                      remarkPlugins={[remarkGfm]}
+                      components={{
+                        code({ className, children, ...props }) {
+                          const match = /language-(\w+)/.exec(className || "")
+                          const isInline = !match
+                          if (isInline) {
+                            return (
+                              <code className="bg-gray-800 text-pink-300 px-1.5 py-0.5 rounded text-xs" {...props}>
+                                {children}
+                              </code>
+                            )
+                          }
+                          const [copiedCode, setCopiedCode] = useState(false)
+                          function handleCopy() {
+                            const text = extractText(children)
+                            navigator.clipboard.writeText(text)
+                            setCopiedCode(true)
+                            setTimeout(() => setCopiedCode(false), 2000)
+                          }
+                          return (
+                            <div className="relative group my-2">
+                              <pre className="bg-gray-950 text-gray-200 rounded-lg p-4 overflow-x-auto text-xs">
+                                <code className={className} {...props}>
+                                  {children}
+                                </code>
+                              </pre>
+                              <button
+                                onClick={handleCopy}
+                                className="absolute top-2 right-2 px-2 py-1 text-xs rounded bg-gray-800 text-gray-400 opacity-0 group-hover:opacity-100 hover:bg-gray-700 hover:text-gray-200 transition-all"
+                              >
+                                {copiedCode ? <CheckCheck size={12} /> : <Copy size={12} />}
+                              </button>
+                            </div>
+                          )
+                        },
+                        pre({ children }) {
+                          return <>{children}</>
+                        },
+                        p({ children }) {
+                          return <p className="mb-2 last:mb-0 leading-relaxed">{children}</p>
+                        },
+                        ul({ children }) {
+                          return <ul className="list-disc list-inside mb-2 space-y-1">{children}</ul>
+                        },
+                        ol({ children }) {
+                          return <ol className="list-decimal list-inside mb-2 space-y-1">{children}</ol>
+                        },
+                        a({ href, children }) {
+                          return (
+                            <a href={href} target="_blank" rel="noopener noreferrer" className="text-indigo-400 hover:text-indigo-300 underline">
+                              {children}
+                            </a>
+                          )
+                        },
+                        h1({ children }) { return <h1 className="text-lg font-bold mb-2 mt-4 text-gray-100">{children}</h1> },
+                        h2({ children }) { return <h2 className="text-base font-bold mb-2 mt-3 text-gray-100">{children}</h2> },
+                        h3({ children }) { return <h3 className="text-sm font-bold mb-1 mt-2 text-gray-100">{children}</h3> },
+                        blockquote({ children }) {
+                          return <blockquote className="border-l-4 border-gray-600 pl-4 my-2 text-gray-400 italic">{children}</blockquote>
+                        },
+                        table({ children }) {
+                          return (
+                            <div className="overflow-x-auto my-2">
+                              <table className="min-w-full text-xs border-collapse border border-gray-700">{children}</table>
+                            </div>
+                          )
+                        },
+                        th({ children }) { return <th className="border border-gray-700 px-3 py-1.5 bg-gray-800 text-left font-medium">{children}</th> },
+                        td({ children }) { return <td className="border border-gray-700 px-3 py-1.5">{children}</td> },
+                      }}
+                    >
+                      {msg.content}
+                    </ReactMarkdown>
+                  ) : (
+                    <span className="whitespace-pre-wrap">
+                      {msg.content || (loading && i === messages.length - 1 && msg.role === "assistant" ? (
+                        <span className="text-gray-500">{t("chat.thinking")}</span>
+                      ) : msg.content)}
+                    </span>
+                  )}
                 </div>
                 {msg.role === "assistant" && msg.content && (
                   <button

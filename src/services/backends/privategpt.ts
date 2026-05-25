@@ -4,15 +4,73 @@ import { BackendError } from "../../utils/errors"
 import { readLines } from "../../utils/stream"
 import { createContentChunk, createStopChunk, encodeSSE } from "../../utils/sse"
 import type { BackendAdapter } from "./types"
+import { updateBackendTokens } from "../../config/loader"
 
-function getLastUserMessage(messages: Message[]): string {
-  for (let i = messages.length - 1; i >= 0; i--) {
-    const m = messages[i]
-    if (m.role === "user") {
-      return typeof m.content === "string" ? m.content : ""
+async function refreshAccessToken(backend: BackendConfig): Promise<boolean> {
+  if (!backend.refreshToken || !backend.refreshEndpoint) return false
+
+  try {
+    const res = await fetch(`${backend.baseURL}${backend.refreshEndpoint}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ refreshToken: backend.refreshToken }),
+    })
+
+    if (!res.ok) return false
+
+    const data = await res.json()
+    if (!data.accessToken) return false
+
+    backend.apiKey = data.accessToken
+    backend.refreshToken = data.refreshToken ?? backend.refreshToken
+
+    if (backend.name) {
+      updateBackendTokens(backend.name, backend.apiKey, backend.refreshToken ?? "")
     }
+
+    return true
+  } catch {
+    return false
   }
-  return ""
+}
+
+async function tryRequest(
+  backend: BackendConfig,
+  body: unknown,
+): Promise<Response> {
+  const url = `${backend.baseURL}/api/chat/v1/conversations`
+
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${backend.apiKey}`,
+      Accept: "text/event-stream",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  })
+
+  if (response.status === 401 && backend.refreshToken) {
+    const refreshed = await refreshAccessToken(backend)
+    if (!refreshed) throw new BackendError(401, "auth_failed", "Token expired and refresh failed")
+
+    const retry = await fetch(url, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${backend.apiKey}`,
+        Accept: "text/event-stream",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(body),
+    })
+
+    if (!retry.ok) throw new BackendError(retry.status)
+    return retry
+  }
+
+  if (!response.ok) throw new BackendError(response.status)
+
+  return response
 }
 
 function extractContent(event: string, data: string): string | null {
@@ -86,27 +144,15 @@ function transformToSSEStream(
 export function createPrivateGPTAdapter(): BackendAdapter {
   return {
     async chat(backend: BackendConfig, messages: Message[], params: Partial<ChatRequest>) {
-      const base = backend.baseURL
-      const url = `${base}/api/chat/v1/conversations`
-      const question = getLastUserMessage(messages)
+      const body = {
+        question: JSON.stringify({ conversation: messages }),
+        modelId: backend.model,
+      }
 
-      const response = await fetch(url, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${backend.apiKey}`,
-          Accept: "text/event-stream",
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          question,
-          modelId: backend.model,
-        }),
-      })
-
-      if (!response.ok) throw new BackendError(response.status)
+      const response = await tryRequest(backend, body)
 
       if (!response.body) {
-        throw new BackendError(500, "empty_body", "No response body from PrivateGPT")
+        throw new BackendError(500, "empty_body", "No response body")
       }
 
       if (params.stream) return transformToSSEStream(response.body, backend.model)

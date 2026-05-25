@@ -10,7 +10,9 @@
       "provider": "privategpt",
       "model": "azure-gpt-4o",
       "apiKey": "${PRIVATEGPT_API_KEY}",
-      "baseURL": "{PRIVATEGPT_URL}"
+      "baseURL": "{PRIVATEGPT_URL}",
+      "refreshToken": "${PRIVATEGPT_REFRESH_TOKEN}",
+      "refreshEndpoint": "/api/auth/refresh"
     }
   },
   "router_models": {

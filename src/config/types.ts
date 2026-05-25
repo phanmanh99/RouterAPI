@@ -3,6 +3,9 @@ export interface BackendConfig {
   model: string
   apiKey: string
   baseURL: string
+  name?: string
+  refreshToken?: string
+  refreshEndpoint?: string
 }
 
 export interface RouterModelConfig {
