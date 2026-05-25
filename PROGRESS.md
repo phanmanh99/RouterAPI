@@ -29,28 +29,46 @@
 
 ---
 
-## ⬜ Phase 2 — Embeddings
+## ✅ Phase 2 — Web UI (completed)
+
+| Step | File / Feature | Status |
+|------|----------------|--------|
+| 2.1 | `src/routes/admin.ts` — Management API (status, models/detail, config, logs) | ✅ |
+| 2.2 | `src/web/` — Vite + React + Tailwind scaffold | ✅ |
+| 2.3 | `src/web/src/i18n.ts` — i18next setup (EN/VN) | ✅ |
+| 2.4 | UI primitives (Button, Card, Spinner, StatusBadge, StatusDot) | ✅ |
+| 2.5 | Sidebar with view routing | ✅ |
+| 2.6 | Dashboard page (overview + logs tab) | ✅ |
+| 2.7 | Chat playground (stream + non-stream, fallback display) | ✅ |
+| 2.8 | Models page (router models + backend details) | ✅ |
+| 2.9 | Settings page (config display + language switcher) | ✅ |
+| 2.10 | `@elysiajs/static` integration + SPA serving | ✅ |
+| 2.11 | `src/index.ts` — Admin routes registration | ✅ |
+
+---
+
+## ⬜ Phase 3 — Embeddings
 
 | Step | File | Status |
 |------|------|--------|
-| 2.1 | `src/routes/embeddings.ts` — POST /v1/embeddings | ⬜ |
-| 2.2 | Backend adapter + models.json config | ⬜ |
+| 3.1 | `src/routes/embeddings.ts` — POST /v1/embeddings | ⬜ |
+| 3.2 | Backend adapter + models.json config | ⬜ |
 
-## ⬜ Phase 3 — Image & Audio
-
-| Step | File | Status |
-|------|------|--------|
-| 3.1 | `src/routes/images.ts` — POST /v1/images/generations | ⬜ |
-| 3.2 | `src/routes/audio.ts` — Transcriptions + speech | ⬜ |
-
-## ⬜ Phase 4 — Production hardening
+## ⬜ Phase 4 — Image & Audio
 
 | Step | File | Status |
 |------|------|--------|
-| 4.1 | Graceful shutdown | ⬜ |
-| 4.2 | Request logging middleware | ⬜ |
-| 4.3 | GET /health (built into index.ts) | ✅ |
-| 4.4 | Rate limiting | ⬜ |
+| 4.1 | `src/routes/images.ts` — POST /v1/images/generations | ⬜ |
+| 4.2 | `src/routes/audio.ts` — Transcriptions + speech | ⬜ |
+
+## ⬜ Phase 5 — Production hardening
+
+| Step | File | Status |
+|------|------|--------|
+| 5.1 | Graceful shutdown | ⬜ |
+| 5.2 | Rate limiting | ⬜ |
+| 5.3 | Request logging middleware (built into index.ts) | ✅ |
+| 5.4 | GET /health | ✅ |
 
 ---
 
@@ -64,6 +82,12 @@ cp models.example.json models.json
 
 bun run dev      # Dev mode (auto-reload)
 bun run start    # Production
+
+# Build web UI (cần chạy 1 lần, hoặc sau khi sửa frontend)
+bun run build:web
+
+# Dev web UI (Vite HMR, cổng 5173)
+bun run dev:web
 
 # Test
 curl http://localhost:3000/v1/models

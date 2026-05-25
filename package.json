@@ -8,9 +8,12 @@
     "build": "tsc",
     "build:bundle": "bun build ./src/index.ts --outdir ./dist --target node",
     "build:binary": "bun build --compile ./src/index.ts --outfile server",
-    "start:node": "bun run build:bundle && node dist/index.js"
+    "start:node": "bun run build:bundle && node dist/index.js",
+    "build:web": "cd src/web && bun run build",
+    "dev:web": "cd src/web && bun run dev"
   },
   "dependencies": {
+    "@elysiajs/static": "^1.4.10",
     "elysia": "^1.2.0"
   },
   "devDependencies": {

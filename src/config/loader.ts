@@ -1,9 +1,11 @@
-import { readFileSync, existsSync } from "fs"
+import { readFileSync, writeFileSync, existsSync } from "fs"
 import { join, dirname } from "path"
 import { fileURLToPath } from "url"
 import type { AppConfig, BackendConfig, RouterModelConfig } from "./types"
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
+
+let _configPath: string | null = null
 
 function resolveEnvVars(value: string): string {
   return value.replace(/\$\{(\w+)\}/g, (_, key) => {
@@ -19,7 +21,7 @@ function resolveBackendEnvVars(backend: BackendConfig): BackendConfig {
   }
 }
 
-function findConfigPath(configPath?: string): string {
+export function findConfigPath(configPath?: string): string {
   if (configPath) return configPath
 
   const candidates = [
@@ -36,6 +38,7 @@ function findConfigPath(configPath?: string): string {
 
 export function loadConfig(configPath?: string): AppConfig {
   const path = findConfigPath(configPath)
+  _configPath = path
 
   if (!existsSync(path)) {
     throw new Error(`Config file not found: ${path}`)
@@ -55,6 +58,21 @@ export function loadConfig(configPath?: string): AppConfig {
   }
 
   return resolved
+}
+
+export function saveConfig(config: AppConfig): void {
+  const path = _configPath ?? findConfigPath()
+  const raw = readFileSync(path, "utf-8")
+  const current: AppConfig = JSON.parse(raw)
+
+  current.backends = config.backends
+  current.router_models = config.router_models
+
+  writeFileSync(path, JSON.stringify(current, null, 2) + "\n")
+}
+
+export function reloadConfig(): AppConfig {
+  return loadConfig(_configPath ?? undefined)
 }
 
 function validateBackend(name: string, backend: BackendConfig): void {

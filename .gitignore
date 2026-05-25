@@ -3,6 +3,7 @@ dist/
 server.exe
 server
 *.log
+*.tsbuildinfo
 .env
 
 # Local config (sensitive info - use *.example.json as template)

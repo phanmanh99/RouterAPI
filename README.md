@@ -29,6 +29,24 @@ bun run start    # production
 
 Máy chủ chạy tại `http://0.0.0.0:3000`.
 
+### Web UI
+
+Server đi kèm giao diện web React SPA (tự động serve tại `http://localhost:3000`).
+
+```bash
+# Build web UI (chạy 1 lần, tự động nếu dùng bun run start)
+bun run build:web
+
+# Dev web UI (Vite dev server + HMR, cổng 5173)
+bun run dev:web
+```
+
+Web UI gồm 4 trang:
+- **Dashboard** — Thống kê server, trạng thái backend, nhật ký
+- **Chat** — Playground chat, chọn model, stream/non-stream
+- **Models** — Danh sách router models + fallback chain
+- **Settings** — Cấu hình server, chuyển ngôn ngữ (EN/VN)
+
 ## Cấu hình
 
 Toàn bộ cấu hình nằm trong `models.json`. **Không có hardcode URL trong source** — mọi backend phải khai báo `baseURL`. Nếu thiếu, server sẽ refuse khởi động.
@@ -74,8 +92,12 @@ cp models.example.json models.json
 | `GET` | `/v1/models` | Danh sách router models |
 | `POST` | `/v1/chat/completions` | Chat completion (stream + non-stream) |
 | `GET` | `/health` | Kiểm tra trạng thái |
+| `GET` | `/api/status` | Thống kê server + trạng thái backend |
+| `GET` | `/api/models/detail` | Chi tiết router models + backends |
+| `GET` | `/api/config` | Cấu hình server (đã sanitize) |
+| `GET` | `/api/logs` | 200 dòng log gần nhất |
 
-Phản hồi kèm header `X-Fallback` (vd `ollama-llama3` hoặc `ollama-llama3→privategpt-4o`).
+Phản hồi `POST /v1/chat/completions` kèm header `X-Fallback` (vd `ollama-llama3` hoặc `ollama-llama3→privategpt-4o`).
 
 ### Quy tắc fallback
 
@@ -105,7 +127,8 @@ src/
 │   └── types.ts               # BackendConfig, RouterModelConfig
 ├── routes/
 │   ├── chat.ts                # POST /v1/chat/completions
-│   └── models.ts              # GET /v1/models
+│   ├── models.ts              # GET /v1/models
+│   └── admin.ts               # Web UI API (status, models/detail, config, logs)
 ├── services/
 │   ├── fallback.ts            # Fallback chain logic
 │   └── backends/
@@ -117,10 +140,39 @@ src/
 │   └── auth.ts                # Bearer token validation (optional)
 ├── types/
 │   └── openai.ts              # OpenAI-compatible types
-└── utils/
-    ├── errors.ts              # BackendError, error helpers
-    ├── sse.ts                 # SSE encode + chunk builders
-    └── stream.ts              # Stream line reader
+├── utils/
+│   ├── errors.ts              # BackendError, error helpers
+│   ├── sse.ts                 # SSE encode + chunk builders
+│   └── stream.ts              # Stream line reader
+├── web/                       # React SPA frontend
+│   ├── index.html
+│   ├── package.json
+│   ├── vite.config.ts
+│   ├── tailwind.config.js
+│   ├── postcss.config.cjs
+│   ├── tsconfig.json
+│   ├── dist/                  # Built assets (generated)
+│   └── src/
+│       ├── main.tsx
+│       ├── App.tsx
+│       ├── index.css
+│       ├── i18n.ts
+│       ├── types.ts
+│       ├── locales/
+│       │   ├── en.json
+│       │   └── vi.json
+│       └── components/
+│           ├── Sidebar.tsx
+│           ├── Dashboard.tsx
+│           ├── Chat.tsx
+│           ├── Models.tsx
+│           ├── Settings.tsx
+│           └── ui/
+│               ├── Button.tsx
+│               ├── Card.tsx
+│               ├── Spinner.tsx
+│               ├── StatusBadge.tsx
+│               └── StatusDot.tsx
 ```
 
 ## Thêm backend provider mới
