@@ -1,5 +1,7 @@
 # AGENTS.md — OpenCode Provider Server
 
+> ⚡ Dành cho AI coding agent. Xem [README.md](./README.md) nếu bạn là người mới bắt đầu — hướng dẫn từ a-z, cấu hình, Web UI, API endpoints.
+
 ## Runtime & toolchain
 
 - **Runtime:** Bun, not Node.js. Use `bun` for everything (install, run, typecheck).

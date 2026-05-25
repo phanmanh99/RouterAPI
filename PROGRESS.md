@@ -1,6 +1,8 @@
 # Progress: OpenCode Provider Server
 
 > Bun + Elysia (TypeScript) — OpenAI-compatible server với multi-LLM fallback
+>
+> 📖 Xem [README.md](./README.md) cho hướng dẫn chi tiết cài đặt, cấu hình, và sử dụng.
 
 ---
 
@@ -74,24 +76,4 @@
 
 ## Cách chạy
 
-```bash
-cd opencode-provider-server
-
-cp models.example.json models.json
-# Sửa models.json với API keys / URLs của bạn
-
-bun run dev      # Dev mode (auto-reload)
-bun run start    # Production
-
-# Build web UI (cần chạy 1 lần, hoặc sau khi sửa frontend)
-bun run build:web
-
-# Dev web UI (Vite HMR, cổng 5173)
-bun run dev:web
-
-# Test
-curl http://localhost:3000/v1/models
-curl -X POST http://localhost:3000/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -d '{"model":"local-llama","messages":[{"role":"user","content":"hello"}]}'
-```
+Xem hướng dẫn chi tiết tại [README.md — Bắt đầu nhanh](./README.md#bắt-đầu-nhanh).
