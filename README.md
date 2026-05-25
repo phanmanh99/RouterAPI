@@ -42,13 +42,19 @@ cp models.example.json models.json
 
 Sửa file `models.json` với API key và URL phù hợp (xem [Cấu hình](#cấu-hình)).
 
-### 3. Build web UI (lần đầu)
+### 3. Cài đặt dependencies cho web UI
+
+```bash
+cd src/web && bun install
+```
+
+### 4. Build web UI (lần đầu)
 
 ```bash
 bun run build:web
 ```
 
-### 4. Chạy
+### 5. Chạy
 
 ```bash
 bun run dev      # Dev mode, auto-reload khi sửa code
@@ -206,6 +212,35 @@ cp models.example.json models.json
 | `apiKey` | API key xác thực client. Để trống để tắt auth |
 | `logging.level` | `debug`, `info`, `warn`, `error` |
 | `logging.file` | File log. Bỏ qua để chỉ log ra console |
+
+### Logger
+
+Server ghi log với 4 mức: `debug`, `info`, `warn`, `error`. Mặc định là `info`.
+
+Khi bật `debug`, mỗi request chat sẽ log:
+- **Input**: model, messages, stream flag
+- **Output**: response choices (non-streaming) hoặc error
+
+Cấu hình trong `server.logging`:
+
+| Trường | Mô tả |
+|--------|-------|
+| `level` | Mức log: `debug`, `info`, `warn`, `error` |
+| `file` | Đường dẫn file log. Bỏ trống để chỉ log ra console |
+
+Ví dụ:
+```json
+{
+  "server": {
+    "logging": {
+      "level": "debug",
+      "file": "server.log"
+    }
+  }
+}
+```
+
+File `*.log` đã được thêm vào `.gitignore`.
 
 ### Biến môi trường
 
