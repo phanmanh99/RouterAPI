@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync } from "fs"
 import { join } from "path"
 import { tmpdir } from "os"
-import puppeteer, { type Page } from "puppeteer"
+import puppeteer, { type Page, type Browser } from "puppeteer"
 
 interface BrowserAuthResult {
   accessToken: string
@@ -36,9 +36,10 @@ export function getAuthStatus(backendName: string): Session | null {
 
 async function runAuth(backendName: string, baseURL: string) {
   let userDataDir: string | undefined
+  let browser: Browser | undefined
   try {
     userDataDir = mkdtempSync(join(tmpdir(), "routerapi-chrome-"))
-    const browser = await puppeteer.launch({
+    browser = await puppeteer.launch({
       headless: false,
       defaultViewport: null,
       args: ["--start-maximized", `--user-data-dir=${userDataDir}`],
@@ -60,8 +61,6 @@ async function runAuth(backendName: string, baseURL: string) {
       s.status = "error"
       s.error = "Authentication timeout or cancelled"
     }
-
-    await browser.close()
   } catch (err) {
     const s = sessions.get(backendName)
     if (s) {
@@ -69,6 +68,9 @@ async function runAuth(backendName: string, baseURL: string) {
       s.error = err instanceof Error ? err.message : "Unknown error"
     }
   } finally {
+    try {
+      if (browser) await browser.close()
+    } catch {}
     if (userDataDir) {
       for (let i = 0; i < 5; i++) {
         try {
@@ -90,7 +92,13 @@ async function waitForMsalTokens(
   const start = Date.now()
 
   while (Date.now() - start < timeoutMs) {
-    const currentUrl = page.url()
+    let currentUrl: string
+    try {
+      currentUrl = page.url()
+    } catch {
+      await sleep(1000)
+      continue
+    }
     if (!currentUrl.startsWith(origin)) {
       await sleep(1000)
       continue
