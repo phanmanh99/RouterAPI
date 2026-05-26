@@ -3,7 +3,12 @@ import { join } from "path"
 import { tmpdir } from "os"
 import puppeteer, { type Page, type Browser } from "puppeteer"
 
-const log = (...args: unknown[]) => console.log(`[BrowserAuth] ${new Date().toISOString()}`, ...args)
+const log = (...args: unknown[]) => {
+  const ts = new Date().toISOString()
+  for (const a of args) {
+    console.log(`[BrowserAuth] ${ts} ${typeof a === "string" ? a : JSON.stringify(a)}`)
+  }
+}
 
 interface BrowserAuthResult {
   accessToken: string
@@ -41,8 +46,10 @@ async function runAuth(backendName: string, baseURL: string) {
   let userDataDir: string | undefined
   let browser: Browser | undefined
   try {
-    userDataDir = mkdtempSync(join(tmpdir(), "routerapi-chrome-"))
-    log(`userDataDir created: ${userDataDir}`)
+    const tmp = tmpdir()
+    log("tmpdir:", tmp)
+    userDataDir = mkdtempSync(join(tmp, "routerapi-chrome-"))
+    log("userDataDir:", userDataDir)
 
     browser = await puppeteer.launch({
       headless: false,
@@ -111,28 +118,32 @@ async function waitForMsalTokens(
 ): Promise<BrowserAuthResult | null> {
   const start = Date.now()
   let pollCount = 0
+  let logDeadline = 0
 
   while (Date.now() - start < timeoutMs) {
     let currentUrl: string
     try {
       currentUrl = page.url()
     } catch {
-      if (pollCount % 5 === 0) log(`page.url() threw (navigation in progress), retrying...`)
+      if (pollCount % 5 === 0) log("page.url() threw (navigation in progress), retrying...")
       await sleep(1000)
       continue
     }
 
     if (!currentUrl.startsWith(origin)) {
-      if (pollCount === 0 || pollCount % 15 === 0) {
-        log(`Waiting for origin URL... current=${currentUrl}`)
+      if (Date.now() > logDeadline) {
+        logDeadline = Date.now() + 5000
+        const title = await page.title().catch(() => "(no title)")
+        log("Not on origin URL", { currentUrl, title })
       }
       await sleep(1000)
       pollCount++
       continue
     }
 
-    if (pollCount % 10 === 0 || pollCount === 0) {
-      log(`On origin URL, checking localStorage for MSAL tokens... (poll #${pollCount})`)
+    if (Date.now() > logDeadline) {
+      logDeadline = Date.now() + 5000
+      log("On origin, checking localStorage...", { pollCount })
     }
 
     const tokens = await page.evaluate(() => {
@@ -148,42 +159,49 @@ async function waitForMsalTokens(
           } catch {}
         }
       }
-      return null
+      return { localStorageKeys: allKeys }
     }).catch(() => null)
 
     if (tokens) {
-      log(`Found token in localStorage: key=${tokens.key}, type=${tokens.credentialType}`)
+      if ("localStorageKeys" in tokens) {
+        log("No MSAL tokens in localStorage", { keys: tokens.localStorageKeys })
+      } else {
+        log("Found token in localStorage", { key: tokens.key, type: tokens.credentialType })
 
-      const allTokens = await page.evaluate(() => {
-        let at: string | null = null
-        let rt: string | null = null
-        for (let i = 0; i < localStorage.length; i++) {
-          const key = localStorage.key(i)!
-          if (key.includes(".accesstoken-")) {
-            try {
-              const val = JSON.parse(localStorage.getItem(key)!)
-              if (val.secret) at = val.secret
-            } catch {}
+        const allTokens = await page.evaluate(() => {
+          let at: string | null = null
+          let rt: string | null = null
+          for (let i = 0; i < localStorage.length; i++) {
+            const key = localStorage.key(i)!
+            if (key.includes(".accesstoken-")) {
+              try {
+                const val = JSON.parse(localStorage.getItem(key)!)
+                if (val.secret) at = val.secret
+              } catch {}
+            }
+            if (key.includes(".refreshtoken-")) {
+              try {
+                const val = JSON.parse(localStorage.getItem(key)!)
+                if (val.secret) rt = val.secret
+              } catch {}
+            }
           }
-          if (key.includes(".refreshtoken-")) {
-            try {
-              const val = JSON.parse(localStorage.getItem(key)!)
-              if (val.secret) rt = val.secret
-            } catch {}
-          }
+          if (at) return { accessToken: at, refreshToken: rt ?? "" }
+          return null
+        }).catch(() => null)
+
+        if (allTokens) {
+          log("Returning tokens from waitForMsalTokens")
+          return allTokens
         }
-        if (at) return { accessToken: at, refreshToken: rt ?? "" }
-        return null
-      }).catch(() => null)
-
-      if (allTokens) return allTokens
+      }
     }
 
     await sleep(2000)
     pollCount++
   }
 
-  log(`Token poll timeout after ${Date.now() - start}ms`)
+  log("Token poll timeout", { elapsedMs: Date.now() - start })
   return null
 }
 
