@@ -1,3 +1,6 @@
+import { mkdtempSync, rmSync } from "fs"
+import { join } from "path"
+import { tmpdir } from "os"
 import puppeteer, { type Page } from "puppeteer"
 
 interface BrowserAuthResult {
@@ -32,11 +35,13 @@ export function getAuthStatus(backendName: string): Session | null {
 }
 
 async function runAuth(backendName: string, baseURL: string) {
+  let userDataDir: string | undefined
   try {
+    userDataDir = mkdtempSync(join(tmpdir(), "routerapi-chrome-"))
     const browser = await puppeteer.launch({
       headless: false,
       defaultViewport: null,
-      args: ["--start-maximized"],
+      args: ["--start-maximized", `--user-data-dir=${userDataDir}`],
     })
 
     const page = await browser.newPage()
@@ -56,12 +61,23 @@ async function runAuth(backendName: string, baseURL: string) {
       s.error = "Authentication timeout or cancelled"
     }
 
-    await browser.close().catch(() => {})
+    await browser.close()
   } catch (err) {
     const s = sessions.get(backendName)
     if (s) {
       s.status = "error"
       s.error = err instanceof Error ? err.message : "Unknown error"
+    }
+  } finally {
+    if (userDataDir) {
+      for (let i = 0; i < 5; i++) {
+        try {
+          rmSync(userDataDir, { recursive: true, force: true })
+          break
+        } catch {
+          await sleep(2000)
+        }
+      }
     }
   }
 }

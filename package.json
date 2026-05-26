@@ -14,7 +14,8 @@
   },
   "dependencies": {
     "@elysiajs/static": "^1.4.10",
-    "elysia": "^1.2.0"
+    "elysia": "^1.2.0",
+    "puppeteer": "^25.1.0"
   },
   "devDependencies": {
     "bun-types": "^1.2.0",
