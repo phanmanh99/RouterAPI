@@ -78,6 +78,12 @@ async function runAuth(backendName: string, baseURL: string) {
 
     const page = await browser.newPage()
 
+    page.on("console", (msg) => {
+      if (msg.type() === "error" || msg.text().includes("msal") || msg.text().includes("token") || msg.text().includes("auth")) {
+        log.info("PAGE CONSOLE", { type: msg.type(), text: msg.text() })
+      }
+    })
+
     await page.evaluateOnNewDocument(() => {
       Object.defineProperty(navigator, "webdriver", { get: () => false });
       (window as any).__capturedToken = null;
@@ -94,6 +100,30 @@ async function runAuth(backendName: string, baseURL: string) {
           }
         } catch {}
         return origFetch(input, init);
+      };
+      const OrigXHR = window.XMLHttpRequest.bind(window);
+      const origOpen = OrigXHR.prototype.open;
+      const origSetHeader = OrigXHR.prototype.setRequestHeader;
+      const xhrMap = new WeakMap<any, Record<string, string>>();
+      OrigXHR.prototype.open = function (method: string, url: string) {
+        xhrMap.set(this, {});
+        return origOpen.apply(this, arguments as any);
+      };
+      OrigXHR.prototype.setRequestHeader = function (name: string, value: string) {
+        const m = xhrMap.get(this);
+        if (m) m[name.toLowerCase()] = value;
+        return origSetHeader.apply(this, arguments as any);
+      };
+      const origSend = OrigXHR.prototype.send;
+      OrigXHR.prototype.send = function () {
+        const m = xhrMap.get(this);
+        if (m) {
+          const auth = m["authorization"];
+          if (typeof auth === "string" && auth.startsWith("Bearer ")) {
+            (window as any).__capturedToken = auth.slice(7);
+          }
+        }
+        return origSend.apply(this, arguments as any);
       };
     })
 
@@ -156,6 +186,8 @@ async function waitForMsalTokens(
 ): Promise<BrowserAuthResult | null> {
   const start = Date.now()
   let pollCount = 0
+  let logDeadline = 0
+  let msalLoaded = false
 
   while (Date.now() - start < timeoutMs) {
     let currentUrl: string
@@ -167,62 +199,107 @@ async function waitForMsalTokens(
     }
 
     if (!currentUrl.startsWith(origin)) {
+      if (Date.now() > logDeadline) {
+        logDeadline = Date.now() + 5000
+        const title = await page.title().catch(() => "(no title)")
+        log.info("Not on origin URL", { currentUrl: currentUrl.substring(0, 120), title })
+      }
       await sleep(1000)
       pollCount++
       continue
     }
 
-    // 1. Try captured token from fetch interception
+    if (Date.now() > logDeadline) {
+      logDeadline = Date.now() + 5000
+      log.info("On origin, pollCount=" + pollCount)
+    }
+
+    // 1. Fetch interception (set up in evaluateOnNewDocument)
     const captured = await page.evaluate(() => (window as any).__capturedToken).catch(() => null)
     if (captured && captured.length > 200) {
       log.info("Captured token from fetch")
       return { accessToken: captured, refreshToken: "" }
     }
 
-    // 2. Try MSAL PublicClientApplication instance on page
+    // 2. Load MSAL from CDN and acquire token
+    if (!msalLoaded) {
+      const loaded = await page.evaluate(async () => {
+        if ((window as any).__msalLoaded) return true
+        try {
+          const s = document.createElement("script")
+          s.src = "https://alcdn.msauth.net/browser/3.6.3/js/msal-browser.min.js"
+          document.head.appendChild(s)
+          await new Promise<void>((resolve, reject) => { s.onload = () => resolve(); s.onerror = reject })
+          ;(window as any).__msalLoaded = true
+          return true
+        } catch { return false }
+      }).catch(() => false)
+      msalLoaded = loaded
+      if (msalLoaded) log.info("MSAL CDN loaded")
+    }
+
+    const viaMsal = await page.evaluate(async () => {
+      if (!(window as any).__msalLoaded) return null
+      try {
+        const pca = new (window as any).msal.PublicClientApplication({
+          auth: {
+            clientId: "75bb3326-a75b-47b0-97f5-67638167d3b7",
+            authority: "https://login.microsoftonline.com/f01e930a-b52e-42b1-b70f-a8882b5d043b",
+            redirectUri: "https://privategpt.fptconsulting.co.jp/auth",
+          },
+          cache: { cacheLocation: "localStorage" },
+        })
+        const accounts = pca.getAllAccounts()
+        if (!accounts || accounts.length === 0) return { status: "noAccounts" }
+        for (const scopes of [["api://fcj-hrapp/Hrapp.User"], ["api://fcj-hrapp/hrapp.user"], ["email", "openid", "profile", "user.read"]]) {
+          try {
+            const r = await pca.acquireTokenSilent({ scopes, account: accounts[0], forceRefresh: false })
+            if (r?.accessToken) return { status: "ok", accessToken: r.accessToken }
+          } catch (e: any) { /* try next scope */ }
+        }
+        return { status: "acquireFailed" }
+      } catch (e: any) {
+        return { status: "error", msg: String(e) }
+      }
+    }).catch(() => null)
+
+    if (viaMsal?.status === "ok") {
+      log.info("Got token via CDN MSAL")
+      return { accessToken: viaMsal.accessToken, refreshToken: "" }
+    }
+    if (viaMsal && viaMsal.status !== "noAccounts") {
+      log.info("CDN MSAL result", viaMsal)
+    }
+
+    // 3. Find existing MSAL instance on window
     const msalToken = await page.evaluate(async () => {
       const search = (obj: any, depth: number, visited: Set<any>): any => {
-        if (depth > 5 || !obj || typeof obj !== "object" || visited.has(obj)) return null
+        if (depth > 6 || !obj || typeof obj !== "object" || visited.has(obj)) return null
         visited.add(obj)
-        if (typeof obj.getAllAccounts === "function" && typeof obj.acquireTokenSilent === "function") {
-          return obj
-        }
+        if (typeof obj.getAllAccounts === "function" && typeof obj.acquireTokenSilent === "function") return obj
         try {
           for (const key of Object.getOwnPropertyNames(obj)) {
-            if (key === "constructor") continue
-            try {
-              const result = search(obj[key], depth + 1, visited)
-              if (result) return result
-            } catch {}
+            if (key === "constructor" || key.startsWith("__")) continue
+            try { const r = search(obj[key], depth + 1, visited); if (r) return r } catch {}
           }
         } catch {}
         return null
       }
       const instance = search(window, 0, new Set())
       if (!instance) return null
-
       const accounts = instance.getAllAccounts()
       if (!accounts || accounts.length === 0) return null
-
-      const scopesToTry = [
-        ["api://fcj-hrapp/Hrapp.User"],
-        ["api://fcj-hrapp/hrapp.user"],
-        ["email", "openid", "profile", "user.read"],
-      ]
-      for (const scopes of scopesToTry) {
-        try {
-          const r = await instance.acquireTokenSilent({ scopes, account: accounts[0], forceRefresh: false })
-          if (r?.accessToken) return { accessToken: r.accessToken, refreshToken: "" }
-        } catch {}
+      for (const scopes of [["api://fcj-hrapp/Hrapp.User"], ["api://fcj-hrapp/hrapp.user"], ["email", "openid", "profile", "user.read"]]) {
+        try { const r = await instance.acquireTokenSilent({ scopes, account: accounts[0], forceRefresh: false }); if (r?.accessToken) return { accessToken: r.accessToken, refreshToken: "" } } catch {}
       }
       return null
     }).catch(() => null)
     if (msalToken) {
-      log.info("Got token via MSAL acquireTokenSilent")
+      log.info("Got token via MSAL instance")
       return msalToken
     }
 
-    // 3. Fallback: try localStorage (look for plaintext secret, skip encrypted data)
+    // 4. localStorage plaintext fallback
     const lsResult = await page.evaluate(() => {
       for (let i = 0; i < localStorage.length; i++) {
         const key = localStorage.key(i)!
@@ -231,9 +308,8 @@ async function waitForMsalTokens(
         if (!raw) continue
         try {
           const val = JSON.parse(raw)
-          if (val.secret && typeof val.secret === "string" && val.secret.length > 200) {
+          if (val.secret && typeof val.secret === "string" && val.secret.length > 200)
             return { accessToken: val.secret, refreshToken: "" }
-          }
         } catch {}
       }
       return null
