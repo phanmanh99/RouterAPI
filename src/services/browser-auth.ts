@@ -175,11 +175,17 @@ async function waitForMsalTokens(
         allKeys.push(localStorage.key(i)!)
       }
       for (const key of allKeys) {
-        if (key.includes("|accesstoken|") || key.includes(".accesstoken-")) {
+        if (/[|.]accesstoken[-|]/.test(key)) {
           try {
-            const val = JSON.parse(localStorage.getItem(key)!)
-            if (val.secret) return { key, credentialType: val.credentialType, secret: val.secret }
-          } catch {}
+            const raw = localStorage.getItem(key)!
+            const val = JSON.parse(raw)
+            if (val && typeof val === "object" && "secret" in val && val.secret) {
+              return { key, credentialType: val.credentialType, secret: val.secret, debug: { keys: Object.keys(val), secretType: typeof val.secret, secretLen: String(val.secret).length } }
+            }
+          } catch (e) {
+            const errMsg = e instanceof Error ? e.message : String(e)
+            return { localStorageKeys: allKeys, debugError: { key, err: errMsg } }
+          }
         }
       }
       return { localStorageKeys: allKeys }
@@ -187,7 +193,7 @@ async function waitForMsalTokens(
 
     if (tokens) {
       if ("localStorageKeys" in tokens) {
-        log.info("No MSAL tokens in localStorage", { keys: (tokens as any).localStorageKeys })
+        log.info("No MSAL tokens in localStorage", { keys: (tokens as any).localStorageKeys, debug: (tokens as any).debugError })
       } else {
         log.info("Found token in localStorage", { key: tokens.key, type: tokens.credentialType })
 
@@ -196,17 +202,16 @@ async function waitForMsalTokens(
           let rt: string | null = null
           for (let i = 0; i < localStorage.length; i++) {
             const key = localStorage.key(i)!
-            if (key.includes("|accesstoken|") || key.includes(".accesstoken-")) {
-              try {
-                const val = JSON.parse(localStorage.getItem(key)!)
-                if (val.secret) at = val.secret
-              } catch {}
+            const raw = localStorage.getItem(key)
+            if (!raw) continue
+            let val: any
+            try { val = JSON.parse(raw) } catch { continue }
+            if (!val || typeof val !== "object" || !("secret" in val) || !val.secret) continue
+            if (/[|.]accesstoken[-|]/.test(key)) {
+              at = val.secret
             }
-            if (key.includes("|refreshtoken|") || key.includes(".refreshtoken-")) {
-              try {
-                const val = JSON.parse(localStorage.getItem(key)!)
-                if (val.secret) rt = val.secret
-              } catch {}
+            if (/[|.]refreshtoken[-|]/.test(key)) {
+              rt = val.secret
             }
           }
           if (at) return { accessToken: at, refreshToken: rt ?? "" }
