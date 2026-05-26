@@ -22,6 +22,7 @@ export interface ModelBackendInfo {
   model: string
   baseURL: string
   hasApiKey: boolean
+  hasOauth: boolean
   reachable: boolean
 }
 

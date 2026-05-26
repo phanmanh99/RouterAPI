@@ -107,6 +107,9 @@
   "models.deleteError": "Failed to delete",
   "models.apiKeyPlaceholder": "New API key",
   "models.id": "ID",
+  "models.authBtn": "Auth",
+  "models.authSuccess": "OAuth authenticated",
+  "models.authError": "Authentication failed",
 
   "settings.title": "Settings",
   "settings.loading": "Loading settings...",

@@ -63,7 +63,7 @@ export async function handleModelsDetail(config: AppConfig) {
       const backends = await Promise.all(
         router.fallbacks.map(async (name) => {
           const b = config.backends[name]
-          if (!b) return { name, provider: "unknown" as const, model: "", baseURL: "", hasApiKey: false, reachable: false }
+          if (!b) return { name, provider: "unknown" as const, model: "", baseURL: "", hasApiKey: false, hasOauth: false, reachable: false }
           const reachable = await pingCached(b.baseURL)
           return {
             name,
@@ -71,6 +71,7 @@ export async function handleModelsDetail(config: AppConfig) {
             model: b.model,
             baseURL: b.baseURL,
             hasApiKey: b.apiKey.length > 0,
+            hasOauth: !!(b.oauthTenantId && b.oauthClientId && b.oauthClientSecret),
             reachable,
           }
         }),

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react"
 import { useTranslation } from "react-i18next"
-import { ArrowRight, CheckCircle, XCircle, Edit3, Save, X, Wifi, Plus, Copy, Trash2 } from "lucide-react"
+import { ArrowRight, CheckCircle, XCircle, Edit3, Save, X, Wifi, Plus, Copy, Trash2, LogIn } from "lucide-react"
 import type { RouterModelDetail, BackendTestResult } from "../types"
 import { Card, CardHeader, CardBody, EmptyState } from "./ui/Card"
 import StatusBadge from "./ui/StatusBadge"
@@ -70,7 +70,26 @@ export default function Models() {
       .catch(() => setLoading(false))
   }, [])
 
-  useEffect(() => { fetchModels() }, [fetchModels])
+  useEffect(() => {
+    fetchModels()
+    const params = new URLSearchParams(location.search)
+    if (params.get("auth") === "success") {
+      const name = params.get("backend") ?? ""
+      showToast(`✅ ${t("models.authSuccess")}: ${name}`)
+      window.history.replaceState({}, "", "/")
+    }
+  }, [fetchModels])
+
+  async function handleOAuth(backendName: string) {
+    try {
+      const res = await fetch(`/api/auth/start?backend=${encodeURIComponent(backendName)}`)
+      if (!res.ok) { const e = await res.json(); throw new Error(e.error) }
+      const data = await res.json()
+      window.location.href = data.authorizeUrl
+    } catch (err) {
+      showToast(`${t("models.authError")}: ${err instanceof Error ? err.message : "?"}`)
+    }
+  }
 
   function showToast(msg: string) {
     setToast(msg)
@@ -387,6 +406,9 @@ export default function Models() {
                                     <Button variant="ghost" size="sm" icon={<Wifi size={12} />} onClick={() => testConnection(b.name)}>{t("models.test")}</Button>
                                   )}
                                   {testResult && <StatusBadge variant={testResult.reachable ? "success" : "error"}>{testResult.reachable ? `${testResult.latency}${t("models.ms")}` : t("models.unreachable")}</StatusBadge>}
+                                  {b.hasOauth && !isTesting && (
+                                    <Button variant="ghost" size="sm" icon={<LogIn size={12} />} onClick={() => handleOAuth(b.name)}>{t("models.authBtn")}</Button>
+                                  )}
                                   <Button variant="primary" size="sm" icon={<Save size={12} />} loading={savingBackend} onClick={() => saveBackendEdit(b.name)}>{t("models.save")}</Button>
                                   <Button variant="ghost" size="sm" icon={<X size={12} />} onClick={cancelBackendEdit}>{t("models.cancel")}</Button>
                                 </div>
@@ -433,6 +455,9 @@ export default function Models() {
                                 <div className="flex items-center gap-1 shrink-0 ml-2">
                                   <Button variant="ghost" size="sm" icon={<Wifi size={12} />} loading={isTesting} onClick={() => testConnection(b.name)}>{t("models.test")}</Button>
                                   {testResult && <StatusBadge variant={testResult.reachable ? "success" : "error"}>{testResult.reachable ? `${testResult.latency}${t("models.ms")}` : t("models.unreachable")}</StatusBadge>}
+                                  {b.hasOauth && (
+                                    <Button variant="ghost" size="sm" icon={<LogIn size={12} />} onClick={() => handleOAuth(b.name)}>{t("models.authBtn")}</Button>
+                                  )}
                                   <Button variant="ghost" size="sm" icon={<Edit3 size={12} />} onClick={() => startBackendEdit(model.id, b)} />
                                   <Button variant="ghost" size="sm" icon={<Copy size={12} />} onClick={() => copyBackend(b.name, { provider: b.provider, model: b.model, baseURL: b.baseURL })} />
                                   <Button variant="ghost" size="sm" icon={<Trash2 size={12} />} onClick={() => handleDeleteBackend(b.name)} />

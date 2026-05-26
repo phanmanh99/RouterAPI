@@ -107,6 +107,9 @@
   "models.deleteError": "Xoá thất bại",
   "models.apiKeyPlaceholder": "API Key mới",
   "models.id": "ID",
+  "models.authBtn": "Xác thực",
+  "models.authSuccess": "OAuth đã xác thực",
+  "models.authError": "Xác thực thất bại",
 
   "settings.title": "Cài đặt",
   "settings.loading": "Đang tải...",

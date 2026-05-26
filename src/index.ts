@@ -17,6 +17,7 @@ import {
   handleCreateRouterModel,
   handleDeleteRouterModel,
 } from "./routes/admin"
+import { handleAuthStart, handleAuthCallback } from "./routes/auth"
 import { createApiKeyValidator } from "./middleware/auth"
 import { Logger } from "./utils/logger"
 import { join, dirname } from "path"
@@ -114,6 +115,15 @@ app.post("/api/router-models", async ({ body }) => {
 
 app.delete("/api/router-models/:id", async ({ params }) => {
   return handleDeleteRouterModel(params.id, config)
+})
+
+app.get("/api/auth/start", async ({ query, request }) => {
+  const origin = new URL(request.url).origin
+  return handleAuthStart(query.backend as string, origin, config)
+})
+
+app.get("/api/auth/callback", async ({ request }) => {
+  return handleAuthCallback(new URL(request.url))
 })
 
 app.post("/api/config/reload", () => {

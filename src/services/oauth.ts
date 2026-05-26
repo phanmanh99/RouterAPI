@@ -138,6 +138,91 @@ async function findAvailablePort(): Promise<number> {
   return port
 }
 
+interface PendingAuth {
+  codeVerifier: string
+  backendName: string
+  redirectUri: string
+}
+
+const pendingAuths = new Map<string, PendingAuth>()
+
+export async function createAuthSession(
+  backendName: string,
+  redirectUri: string,
+): Promise<{ codeVerifier: string; codeChallenge: string; state: string }> {
+  const codeVerifier = generateCodeVerifier()
+  const codeChallenge = await generateCodeChallenge(codeVerifier)
+  const state = generateCodeVerifier()
+  pendingAuths.set(state, { codeVerifier, backendName, redirectUri })
+  return { codeVerifier, codeChallenge, state }
+}
+
+export function consumeAuthSession(
+  state: string,
+): PendingAuth | null {
+  const session = pendingAuths.get(state)
+  if (session) pendingAuths.delete(state)
+  return session ?? null
+}
+
+export function buildAuthorizeUrl(
+  tenantId: string,
+  clientId: string,
+  scope: string,
+  redirectUri: string,
+  codeChallenge: string,
+  state: string,
+): string {
+  return (
+    `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/authorize` +
+    `?client_id=${encodeURIComponent(clientId)}` +
+    `&response_type=code` +
+    `&redirect_uri=${encodeURIComponent(redirectUri)}` +
+    `&scope=${encodeURIComponent(`openid offline_access ${scope}/.default`)}` +
+    `&code_challenge=${encodeURIComponent(codeChallenge)}` +
+    `&code_challenge_method=S256` +
+    `&state=${encodeURIComponent(state)}`
+  )
+}
+
+export async function exchangeCode(
+  tenantId: string,
+  clientId: string,
+  clientSecret: string,
+  code: string,
+  redirectUri: string,
+  codeVerifier: string,
+): Promise<{ accessToken: string; refreshToken?: string }> {
+  const url = `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`
+  const params = new URLSearchParams({
+    grant_type: "authorization_code",
+    client_id: clientId,
+    client_secret: clientSecret,
+    code,
+    redirect_uri: redirectUri,
+    code_verifier: codeVerifier,
+  })
+
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: params,
+  })
+
+  if (!res.ok) {
+    const text = await res.text()
+    throw new BackendError(res.status, "oauth_failed", `Token exchange failed: ${text}`)
+  }
+
+  const data = await res.json()
+  if (!data.access_token) throw new BackendError(500, "oauth_failed", "No access_token in token exchange response")
+
+  return {
+    accessToken: data.access_token,
+    refreshToken: data.refresh_token ?? undefined,
+  }
+}
+
 function generateCodeVerifier(): string {
   const bytes = new Uint8Array(48)
   crypto.getRandomValues(bytes)
