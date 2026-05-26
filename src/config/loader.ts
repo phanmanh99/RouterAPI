@@ -96,6 +96,24 @@ export function updateBackendTokens(
   }
 }
 
+export function saveBackendOAuthConfig(
+  name: string,
+  clientId: string,
+  tenantId: string,
+  scope: string,
+): void {
+  const path = _configPath ?? findConfigPath()
+  const raw = readFileSync(path, "utf-8")
+  const current: AppConfig = JSON.parse(raw)
+
+  if (current.backends[name]) {
+    current.backends[name].oauthClientId = clientId
+    current.backends[name].oauthTenantId = tenantId
+    current.backends[name].oauthScope = scope
+    writeFileSync(path, JSON.stringify(current, null, 2) + "\n")
+  }
+}
+
 function validateBackend(name: string, backend: BackendConfig): void {
   if (!backend.baseURL) {
     throw new Error(

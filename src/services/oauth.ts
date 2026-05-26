@@ -70,7 +70,7 @@ export async function refreshTokenGrant(
 export async function authorizeWithBrowser(
   tenantId: string,
   clientId: string,
-  clientSecret: string,
+  clientSecret: string | undefined,
   scope: string,
 ): Promise<{ accessToken: string; refreshToken?: string }> {
   const port = await findAvailablePort()
@@ -99,11 +99,11 @@ export async function authorizeWithBrowser(
   const params = new URLSearchParams({
     grant_type: "authorization_code",
     client_id: clientId,
-    client_secret: clientSecret,
     code,
     redirect_uri: redirectUri,
     code_verifier: codeVerifier,
   })
+  if (clientSecret) params.set("client_secret", clientSecret)
 
   const res = await fetch(tokenUrl, {
     method: "POST",
@@ -188,7 +188,7 @@ export function buildAuthorizeUrl(
 export async function exchangeCode(
   tenantId: string,
   clientId: string,
-  clientSecret: string,
+  clientSecret: string | undefined,
   code: string,
   redirectUri: string,
   codeVerifier: string,
@@ -197,11 +197,11 @@ export async function exchangeCode(
   const params = new URLSearchParams({
     grant_type: "authorization_code",
     client_id: clientId,
-    client_secret: clientSecret,
     code,
     redirect_uri: redirectUri,
     code_verifier: codeVerifier,
   })
+  if (clientSecret) params.set("client_secret", clientSecret)
 
   const res = await fetch(url, {
     method: "POST",
@@ -290,9 +290,16 @@ export async function discoverOAuthConfig(
   baseURL: string,
 ): Promise<{ oauthClientId: string; oauthTenantId: string; oauthScope: string } | null> {
   try {
-    const html = await fetch(baseURL, { signal: AbortSignal.timeout(10_000) })
-    if (!html.ok) return null
-    const text = await html.text()
+    const ac = new AbortController()
+    const timer = setTimeout(() => ac.abort(), 10_000)
+    let text: string
+    try {
+      const html = await fetch(baseURL, { signal: ac.signal })
+      if (!html.ok) return null
+      text = await html.text()
+    } finally {
+      clearTimeout(timer)
+    }
 
     const scriptPattern = /<script[^>]+src="([^"]+)"[^>]*>/g
     const jsUrls: string[] = []
@@ -308,8 +315,14 @@ export async function discoverOAuthConfig(
 
     let jsContent = ""
     for (const url of jsUrls) {
-      const res = await fetch(url, { signal: AbortSignal.timeout(10_000) })
-      if (res.ok) jsContent += await res.text()
+      const ac2 = new AbortController()
+      const timer2 = setTimeout(() => ac2.abort(), 10_000)
+      try {
+        const res = await fetch(url, { signal: ac2.signal })
+        if (res.ok) jsContent += await res.text()
+      } finally {
+        clearTimeout(timer2)
+      }
     }
 
     if (!jsContent) return null
