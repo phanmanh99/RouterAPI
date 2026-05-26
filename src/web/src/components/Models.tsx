@@ -79,6 +79,8 @@ export default function Models() {
   const [deviceCodePolling, setDeviceCodePolling] = useState(false)
   const [deviceCodeDone, setDeviceCodeDone] = useState(false)
 
+  const [browserAuthLoading, setBrowserAuthLoading] = useState<string | null>(null)
+
   useEffect(() => {
     fetchModels()
   }, [fetchModels])
@@ -132,6 +134,42 @@ export default function Models() {
     } catch {
       showToast("❌ Copy failed")
     }
+  }
+
+  async function handleBrowserAuth(backendName: string) {
+    setBrowserAuthLoading(backendName)
+    try {
+      const res = await fetch(`/api/auth/browser-auth?backend=${encodeURIComponent(backendName)}`, { method: "POST" })
+      if (!res.ok) { const e = await res.json(); throw new Error(e.error) }
+      pollBrowserAuthStatus(backendName)
+    } catch (err) {
+      setBrowserAuthLoading(null)
+      showToast(`${t("models.authError")}: ${err instanceof Error ? err.message : "?"}`)
+    }
+  }
+
+  function pollBrowserAuthStatus(backendName: string) {
+    const poll = async () => {
+      try {
+        const res = await fetch(`/api/auth/browser-auth/status?backend=${encodeURIComponent(backendName)}`)
+        const data = await res.json()
+        if (data.status === "success") {
+          setBrowserAuthLoading(null)
+          showToast(`✅ ${t("models.authSuccess")}: ${backendName}`)
+          fetchModels()
+          return
+        }
+        if (data.status === "error") {
+          setBrowserAuthLoading(null)
+          showToast(`❌ ${data.error || t("models.authError")}`)
+          return
+        }
+        setTimeout(poll, 2000)
+      } catch {
+        setBrowserAuthLoading(null)
+      }
+    }
+    setTimeout(poll, 2000)
   }
 
   function showToast(msg: string) {
@@ -485,12 +523,21 @@ export default function Models() {
                                 <div className="border-t border-gray-700 pt-3 mt-1">
                                   <div className="flex items-center justify-between">
                                     <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">OAuth</span>
-                                    <Button variant="ghost" size="sm"
-                                      icon={<LogIn size={12} />}
-                                      onClick={() => handleDeviceCodeAuth(b.name)}
-                                      disabled={!bForm.baseURL || bForm.baseURL === "http://"}>
-                                      {t("models.authBtn")}
-                                    </Button>
+                                    <div className="flex gap-2">
+                                      <Button variant="ghost" size="sm"
+                                        icon={<LogIn size={12} />}
+                                        loading={browserAuthLoading === b.name}
+                                        onClick={() => handleBrowserAuth(b.name)}
+                                        disabled={!bForm.baseURL || bForm.baseURL === "http://"}>
+                                        {t("models.browserAuth")}
+                                      </Button>
+                                      <Button variant="ghost" size="sm"
+                                        icon={<LogIn size={12} />}
+                                        onClick={() => handleDeviceCodeAuth(b.name)}
+                                        disabled={!bForm.baseURL || bForm.baseURL === "http://"}>
+                                        {t("models.authBtn")}
+                                      </Button>
+                                    </div>
                                   </div>
                                 </div>
                               )}
@@ -509,7 +556,10 @@ export default function Models() {
                                   <Button variant="ghost" size="sm" icon={<Wifi size={12} />} loading={isTesting} onClick={() => testConnection(b.name)}>{t("models.test")}</Button>
                                   {testResult && <StatusBadge variant={testResult.reachable ? "success" : "error"}>{testResult.reachable ? `${testResult.latency}${t("models.ms")}` : t("models.unreachable")}</StatusBadge>}
                                   {b.provider === "privategpt" && (
-                                    <Button variant="ghost" size="sm" icon={<LogIn size={12} />} onClick={() => handleDeviceCodeAuth(b.name)}>{t("models.authBtn")}</Button>
+                                    <>
+                                      <Button variant="ghost" size="sm" icon={<LogIn size={12} />} loading={browserAuthLoading === b.name} onClick={() => handleBrowserAuth(b.name)}>{t("models.browserAuth")}</Button>
+                                      <Button variant="ghost" size="sm" icon={<LogIn size={12} />} onClick={() => handleDeviceCodeAuth(b.name)}>{t("models.authBtn")}</Button>
+                                    </>
                                   )}
                                   <Button variant="ghost" size="sm" icon={<Edit3 size={12} />} onClick={() => startBackendEdit(model.id, b)} />
                                   <Button variant="ghost" size="sm" icon={<Copy size={12} />} onClick={() => copyBackend(b.name, { provider: b.provider, model: b.model, baseURL: b.baseURL })} />

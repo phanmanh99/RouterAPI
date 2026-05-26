@@ -15,6 +15,7 @@
   - `bun run build:web` — build frontend (run before start if frontend changed)
   - `bun run dev:web` — Vite dev server (HMR at port 5173, proxies `/v1` and `/api` to backend)
 - **No test framework** configured yet.
+- **Browser auth** (`src/services/browser-auth.ts`): Puppeteer-based auth automation. Launches headed Chromium, navigates to PrivateGPT URL, reads MSAL tokens from `localStorage` after user login. Uses `POST /api/auth/browser-auth?backend=X` to start, `GET /api/auth/browser-auth/status?backend=X` to poll.
 
 ## Project structure
 

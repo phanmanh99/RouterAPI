@@ -1,6 +1,7 @@
-import type { AppConfig, BackendConfig } from "../config/types"
+import type { AppConfig } from "../config/types"
 import { updateBackendTokens, saveBackendOAuthConfig } from "../config/loader"
 import { createAuthSession, consumeAuthSession, buildAuthorizeUrl, exchangeCode, discoverOAuthConfig, deviceCodeGrant, pollDeviceCodeToken } from "../services/oauth"
+import { startBrowserAuth, getAuthStatus } from "../services/browser-auth"
 
 export async function handleAuthStart(
   backendName: string,
@@ -228,4 +229,50 @@ export async function handleDeviceCodePoll(
       status: 500, headers: { "Content-Type": "application/json" },
     })
   }
+}
+
+export async function handleBrowserAuthStart(
+  backendName: string,
+  config: AppConfig,
+): Promise<Response> {
+  const backend = config.backends[backendName]
+  if (!backend) {
+    return new Response(JSON.stringify({ error: `Backend "${backendName}" not found` }), {
+      status: 404, headers: { "Content-Type": "application/json" },
+    })
+  }
+
+  startBrowserAuth(backendName, backend.baseURL)
+
+  return new Response(JSON.stringify({ backend: backendName }), {
+    headers: { "Content-Type": "application/json" },
+  })
+}
+
+export async function handleBrowserAuthStatus(
+  backendName: string,
+): Promise<Response> {
+  const session = getAuthStatus(backendName)
+  if (!session) {
+    return new Response(JSON.stringify({ status: "not_found" }), {
+      status: 404, headers: { "Content-Type": "application/json" },
+    })
+  }
+
+  if (session.status === "success" && session.result) {
+    updateBackendTokens(backendName, session.result.accessToken, session.result.refreshToken)
+    return new Response(JSON.stringify({ status: "success" }), {
+      headers: { "Content-Type": "application/json" },
+    })
+  }
+
+  if (session.status === "error") {
+    return new Response(JSON.stringify({ status: "error", error: session.error }), {
+      headers: { "Content-Type": "application/json" },
+    })
+  }
+
+  return new Response(JSON.stringify({ status: "pending" }), {
+    headers: { "Content-Type": "application/json" },
+  })
 }

@@ -17,7 +17,7 @@ import {
   handleCreateRouterModel,
   handleDeleteRouterModel,
 } from "./routes/admin"
-import { handleAuthStart, handleAuthCallback, handleAuthDiscover, handleDeviceCodeStart, handleDeviceCodePoll } from "./routes/auth"
+import { handleAuthStart, handleAuthCallback, handleAuthDiscover, handleDeviceCodeStart, handleDeviceCodePoll, handleBrowserAuthStart, handleBrowserAuthStatus } from "./routes/auth"
 import { createApiKeyValidator } from "./middleware/auth"
 import { Logger } from "./utils/logger"
 import { join, dirname } from "path"
@@ -136,6 +136,14 @@ app.get("/api/auth/device-code", async ({ query }) => {
 
 app.get("/api/auth/device-code/status", async ({ query }) => {
   return handleDeviceCodePoll(query.backend as string)
+})
+
+app.post("/api/auth/browser-auth", async ({ query }) => {
+  return handleBrowserAuthStart(query.backend as string, config)
+})
+
+app.get("/api/auth/browser-auth/status", async ({ query }) => {
+  return handleBrowserAuthStatus(query.backend as string)
 })
 
 app.post("/api/config/reload", () => {
