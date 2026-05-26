@@ -1,14 +1,24 @@
-import { mkdtempSync, rmSync } from "fs"
+import { mkdtempSync, rmSync, existsSync, readFileSync } from "fs"
 import { join } from "path"
 import { tmpdir } from "os"
 import puppeteer, { type Page, type Browser } from "puppeteer"
+import { Logger } from "../utils/logger"
+import { findConfigPath } from "../config/loader"
 
-const log = (...args: unknown[]) => {
-  const ts = new Date().toISOString()
-  for (const a of args) {
-    console.log(`[BrowserAuth] ${ts} ${typeof a === "string" ? a : JSON.stringify(a)}`)
-  }
+function createLogger(): Logger {
+  try {
+    const configPath = findConfigPath()
+    if (configPath && existsSync(configPath)) {
+      const raw = readFileSync(configPath, "utf-8")
+      const config = JSON.parse(raw)
+      const logging = config.server?.logging
+      return new Logger(logging)
+    }
+  } catch {}
+  return new Logger({ level: "info" })
 }
+
+const log = createLogger()
 
 interface BrowserAuthResult {
   accessToken: string
@@ -33,7 +43,7 @@ setInterval(() => {
 }, CLEANUP_INTERVAL)
 
 export function startBrowserAuth(backendName: string, baseURL: string): void {
-  log(`startBrowserAuth: backend=${backendName} url=${baseURL}`)
+  log.info(`startBrowserAuth: backend=${backendName} url=${baseURL}`)
   sessions.set(backendName, { status: "pending", createdAt: Date.now() })
   runAuth(backendName, baseURL)
 }
@@ -47,63 +57,63 @@ async function runAuth(backendName: string, baseURL: string) {
   let browser: Browser | undefined
   try {
     const tmp = tmpdir()
-    log("tmpdir:", tmp)
+    log.info("tmpdir", tmp)
     userDataDir = mkdtempSync(join(tmp, "routerapi-chrome-"))
-    log("userDataDir:", userDataDir)
+    log.info("userDataDir", userDataDir)
 
     browser = await puppeteer.launch({
       headless: false,
       defaultViewport: null,
       args: ["--start-maximized", `--user-data-dir=${userDataDir}`],
     })
-    log(`Browser launched, PID: ${browser.process()?.pid}`)
+    log.info(`Browser launched, PID: ${browser.process()?.pid}`)
 
     const page = await browser.newPage()
     const origin = new URL(baseURL).origin
-    log(`Navigating to ${origin}...`)
+    log.info(`Navigating to ${origin}...`)
 
     const gotoResult = await page.goto(origin, { waitUntil: "load", timeout: 30_000 }).catch((err) => {
-      log(`page.goto failed (non-fatal):`, (err as Error)?.message)
+      log.warn("page.goto failed (non-fatal)", (err as Error)?.message)
       return undefined
     })
-    log(`page.goto resolved, url=${page.url()}, status=${gotoResult?.status() ?? "N/A"}`)
+    log.info("page.goto resolved", { url: page.url(), status: gotoResult?.status() ?? "N/A" })
 
-    log(`Starting token poll loop, origin=${origin}`)
+    log.info(`Starting token poll loop, origin=${origin}`)
     const result = await waitForMsalTokens(page, origin)
 
     if (result) {
-      log(`Auth SUCCESS: accessToken length=${result.accessToken.length}, hasRefresh=${!!result.refreshToken}`)
+      log.info(`Auth SUCCESS: accessToken length=${result.accessToken.length}, hasRefresh=${!!result.refreshToken}`)
       const s = sessions.get(backendName)!
       s.status = "success"
       s.result = result
     } else {
-      log(`Auth FAILED: null result from waitForMsalTokens`)
+      log.error("Auth FAILED: null result from waitForMsalTokens")
       const s = sessions.get(backendName)!
       s.status = "error"
       s.error = "Authentication timeout or cancelled"
     }
   } catch (err) {
-    log(`runAuth EXCEPTION:`, err instanceof Error ? err.message : err)
+    log.error("runAuth EXCEPTION", err instanceof Error ? err.message : err)
     const s = sessions.get(backendName)
     if (s) {
       s.status = "error"
       s.error = err instanceof Error ? err.message : "Unknown error"
     }
   } finally {
-    log(`Closing browser...`)
+    log.info("Closing browser...")
     try {
       if (browser) await browser.close()
-      log(`Browser closed`)
-    } catch { log(`Browser close error (ignored)`) }
+      log.info("Browser closed")
+    } catch { log.warn("Browser close error (ignored)") }
     if (userDataDir) {
-      log(`Cleaning up userDataDir: ${userDataDir}`)
+      log.info("Cleaning up userDataDir", { path: userDataDir })
       for (let i = 0; i < 5; i++) {
         try {
           rmSync(userDataDir, { recursive: true, force: true })
-          log(`userDataDir cleaned up`)
+          log.info("userDataDir cleaned up")
           break
         } catch {
-          log(`userDataDir cleanup attempt ${i + 1} failed, retrying...`)
+          log.warn(`userDataDir cleanup attempt ${i + 1} failed, retrying...`)
           await sleep(2000)
         }
       }
@@ -125,7 +135,7 @@ async function waitForMsalTokens(
     try {
       currentUrl = page.url()
     } catch {
-      if (pollCount % 5 === 0) log("page.url() threw (navigation in progress), retrying...")
+      if (pollCount % 5 === 0) log.warn("page.url() threw (navigation in progress), retrying...")
       await sleep(1000)
       continue
     }
@@ -134,7 +144,7 @@ async function waitForMsalTokens(
       if (Date.now() > logDeadline) {
         logDeadline = Date.now() + 5000
         const title = await page.title().catch(() => "(no title)")
-        log("Not on origin URL", { currentUrl, title })
+        log.info("Not on origin URL", { currentUrl, title })
       }
       await sleep(1000)
       pollCount++
@@ -143,7 +153,7 @@ async function waitForMsalTokens(
 
     if (Date.now() > logDeadline) {
       logDeadline = Date.now() + 5000
-      log("On origin, checking localStorage...", { pollCount })
+      log.info("On origin, checking localStorage...", { pollCount })
     }
 
     const tokens = await page.evaluate(() => {
@@ -164,9 +174,9 @@ async function waitForMsalTokens(
 
     if (tokens) {
       if ("localStorageKeys" in tokens) {
-        log("No MSAL tokens in localStorage", { keys: tokens.localStorageKeys })
+        log.info("No MSAL tokens in localStorage", { keys: (tokens as any).localStorageKeys })
       } else {
-        log("Found token in localStorage", { key: tokens.key, type: tokens.credentialType })
+        log.info("Found token in localStorage", { key: tokens.key, type: tokens.credentialType })
 
         const allTokens = await page.evaluate(() => {
           let at: string | null = null
@@ -191,7 +201,7 @@ async function waitForMsalTokens(
         }).catch(() => null)
 
         if (allTokens) {
-          log("Returning tokens from waitForMsalTokens")
+          log.info("Returning tokens from waitForMsalTokens")
           return allTokens
         }
       }
@@ -201,7 +211,7 @@ async function waitForMsalTokens(
     pollCount++
   }
 
-  log("Token poll timeout", { elapsedMs: Date.now() - start })
+  log.info("Token poll timeout", { elapsedMs: Date.now() - start })
   return null
 }
 
