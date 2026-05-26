@@ -344,6 +344,76 @@ export async function discoverOAuthConfig(
   }
 }
 
+export async function deviceCodeGrant(
+  tenantId: string,
+  clientId: string,
+  scope: string,
+): Promise<{
+  userCode: string
+  deviceCode: string
+  verificationUri: string
+  interval: number
+}> {
+  const url = `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/devicecode`
+  const params = new URLSearchParams({
+    client_id: clientId,
+    scope: `openid offline_access ${scope}`,
+  })
+
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: params,
+  })
+
+  if (!res.ok) {
+    const text = await res.text()
+    throw new BackendError(res.status, "oauth_failed", `Device code request failed: ${text}`)
+  }
+
+  const data = await res.json()
+  return {
+    userCode: data.user_code,
+    deviceCode: data.device_code,
+    verificationUri: data.verification_uri,
+    interval: data.interval,
+  }
+}
+
+export async function pollDeviceCodeToken(
+  tenantId: string,
+  clientId: string,
+  deviceCode: string,
+): Promise<{ accessToken: string; refreshToken?: string } | null> {
+  const url = `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`
+  const params = new URLSearchParams({
+    grant_type: "urn:ietf:params:oauth:grant-type:device_code",
+    client_id: clientId,
+    device_code: deviceCode,
+  })
+
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: params,
+  })
+
+  const data = await res.json()
+
+  if (res.ok) {
+    return {
+      accessToken: data.access_token,
+      refreshToken: data.refresh_token ?? undefined,
+    }
+  }
+
+  if (data.error === "authorization_pending" || data.error === "slow_down") {
+    return null
+  }
+
+  throw new BackendError(res.status, "oauth_failed", `Device code poll failed: ${data.error}`)
+}
+
 function openBrowser(url: string): void {
   const cmd = process.platform === "darwin" ? "open"
     : process.platform === "win32" ? "start"

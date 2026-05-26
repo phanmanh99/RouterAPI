@@ -70,25 +70,54 @@ export default function Models() {
       .catch(() => setLoading(false))
   }, [])
 
+  const [deviceCodeData, setDeviceCodeData] = useState<{
+    backend: string
+    userCode: string
+    verificationUri: string
+    interval: number
+  } | null>(null)
+  const [deviceCodePolling, setDeviceCodePolling] = useState(false)
+  const [deviceCodeDone, setDeviceCodeDone] = useState(false)
+
   useEffect(() => {
     fetchModels()
-    const params = new URLSearchParams(location.search)
-    if (params.get("auth") === "success") {
-      const name = params.get("backend") ?? ""
-      showToast(`✅ ${t("models.authSuccess")}: ${name}`)
-      window.history.replaceState({}, "", "/")
-    }
   }, [fetchModels])
 
-  async function handleOAuth(backendName: string) {
+  async function handleDeviceCodeAuth(backendName: string) {
     try {
-      const res = await fetch(`/api/auth/start?backend=${encodeURIComponent(backendName)}`)
+      const res = await fetch(`/api/auth/device-code?backend=${encodeURIComponent(backendName)}`)
       if (!res.ok) { const e = await res.json(); throw new Error(e.error) }
       const data = await res.json()
-      window.location.href = data.authorizeUrl
+      setDeviceCodeData(data)
+      setDeviceCodePolling(true)
+      setDeviceCodeDone(false)
+      pollDeviceCodeStatus(data.backend, data.interval)
     } catch (err) {
       showToast(`${t("models.authError")}: ${err instanceof Error ? err.message : "?"}`)
     }
+  }
+
+  function pollDeviceCodeStatus(backend: string, interval: number) {
+    const poll = async () => {
+      try {
+        const res = await fetch(`/api/auth/device-code/status?backend=${encodeURIComponent(backend)}`)
+        const data = await res.json()
+        if (data.status === "success") {
+          setDeviceCodeDone(true)
+          setDeviceCodePolling(false)
+          showToast(`✅ ${t("models.authSuccess")}: ${backend}`)
+          setTimeout(() => setDeviceCodeData(null), 2000)
+          fetchModels()
+          return
+        }
+        if (data.status === "pending") {
+          setTimeout(poll, interval * 1000)
+        }
+      } catch {
+        setDeviceCodePolling(false)
+      }
+    }
+    setTimeout(poll, interval * 1000)
   }
 
   function showToast(msg: string) {
@@ -444,7 +473,7 @@ export default function Models() {
                                     <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">OAuth</span>
                                     <Button variant="ghost" size="sm"
                                       icon={<LogIn size={12} />}
-                                      onClick={() => handleOAuth(b.name)}
+                                      onClick={() => handleDeviceCodeAuth(b.name)}
                                       disabled={!bForm.baseURL || bForm.baseURL === "http://"}>
                                       {t("models.authBtn")}
                                     </Button>
@@ -466,7 +495,7 @@ export default function Models() {
                                   <Button variant="ghost" size="sm" icon={<Wifi size={12} />} loading={isTesting} onClick={() => testConnection(b.name)}>{t("models.test")}</Button>
                                   {testResult && <StatusBadge variant={testResult.reachable ? "success" : "error"}>{testResult.reachable ? `${testResult.latency}${t("models.ms")}` : t("models.unreachable")}</StatusBadge>}
                                   {b.provider === "privategpt" && (
-                                    <Button variant="ghost" size="sm" icon={<LogIn size={12} />} onClick={() => handleOAuth(b.name)}>{t("models.authBtn")}</Button>
+                                    <Button variant="ghost" size="sm" icon={<LogIn size={12} />} onClick={() => handleDeviceCodeAuth(b.name)}>{t("models.authBtn")}</Button>
                                   )}
                                   <Button variant="ghost" size="sm" icon={<Edit3 size={12} />} onClick={() => startBackendEdit(model.id, b)} />
                                   <Button variant="ghost" size="sm" icon={<Copy size={12} />} onClick={() => copyBackend(b.name, { provider: b.provider, model: b.model, baseURL: b.baseURL })} />
@@ -582,6 +611,44 @@ export default function Models() {
               <Button variant="secondary" onClick={() => setShowAddRouter(false)}>{t("models.cancel")}</Button>
               <Button variant="primary" loading={creating} onClick={handleCreateRouter} disabled={!addRouterForm.id || !addRouterForm.name}>{t("models.save")}</Button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {deviceCodeData && (
+        <div className={modalBg} onClick={() => { if (!deviceCodePolling) setDeviceCodeData(null) }}>
+          <div className="bg-gray-900 border border-gray-800 rounded-xl p-6 w-full max-w-md shadow-2xl text-center" onClick={(e) => e.stopPropagation()}>
+            {deviceCodeDone ? (
+              <>
+                <div className="text-4xl mb-4">✅</div>
+                <h3 className="text-lg font-semibold text-green-400 mb-2">{t("models.deviceCodeDone")}</h3>
+              </>
+            ) : (
+              <>
+                <h3 className="text-lg font-semibold text-gray-100 mb-4">{t("models.deviceCodeTitle")}</h3>
+                <p className="text-sm text-gray-400 mb-3">
+                  {t("models.deviceCodeStep", { uri: deviceCodeData.verificationUri })}
+                </p>
+                <a href={deviceCodeData.verificationUri} target="_blank" rel="noopener noreferrer"
+                  className="text-indigo-400 underline text-sm block mb-4 hover:text-indigo-300">
+                  {deviceCodeData.verificationUri}
+                </a>
+                <p className="text-sm text-gray-400 mb-2">{t("models.deviceCodeStep2")}</p>
+                <div className="bg-gray-800 rounded-lg px-6 py-4 mb-4 inline-block border border-gray-700">
+                  <code className="text-3xl font-bold tracking-[0.3em] text-indigo-300 select-all">
+                    {deviceCodeData.userCode}
+                  </code>
+                </div>
+                <p className="text-sm text-gray-400 mb-4">{t("models.deviceCodeStep3")}</p>
+                <div className="flex items-center justify-center gap-2 text-indigo-400">
+                  <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24" fill="none">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                  </svg>
+                  <span className="text-sm">{t("models.deviceCodeWaiting")}</span>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}

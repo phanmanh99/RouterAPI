@@ -1,6 +1,6 @@
 import type { AppConfig, BackendConfig } from "../config/types"
 import { updateBackendTokens, saveBackendOAuthConfig } from "../config/loader"
-import { createAuthSession, consumeAuthSession, buildAuthorizeUrl, exchangeCode, discoverOAuthConfig } from "../services/oauth"
+import { createAuthSession, consumeAuthSession, buildAuthorizeUrl, exchangeCode, discoverOAuthConfig, deviceCodeGrant, pollDeviceCodeToken } from "../services/oauth"
 
 export async function handleAuthStart(
   backendName: string,
@@ -133,4 +133,92 @@ export async function handleAuthDiscover(
   return new Response(JSON.stringify(result), {
     headers: { "Content-Type": "application/json" },
   })
+}
+
+const deviceCodeSessions = new Map<string, {
+  deviceCode: string
+  tenantId: string
+  clientId: string
+}>()
+
+export async function handleDeviceCodeStart(
+  backendName: string,
+  config: AppConfig,
+): Promise<Response> {
+  const backend = config.backends[backendName]
+  if (!backend) {
+    return new Response(JSON.stringify({ error: `Backend "${backendName}" not found` }), {
+      status: 404, headers: { "Content-Type": "application/json" },
+    })
+  }
+
+  let { oauthTenantId, oauthClientId, oauthScope } = backend
+
+  if (!oauthTenantId || !oauthClientId) {
+    const discovered = await discoverOAuthConfig(backend.baseURL)
+    if (!discovered) {
+      return new Response(JSON.stringify({ error: "Could not discover OAuth config from this URL" }), {
+        status: 400, headers: { "Content-Type": "application/json" },
+      })
+    }
+    oauthClientId = discovered.oauthClientId
+    oauthTenantId = discovered.oauthTenantId
+    oauthScope = discovered.oauthScope
+    saveBackendOAuthConfig(backendName, discovered.oauthClientId, discovered.oauthTenantId, discovered.oauthScope)
+  }
+
+  const scope = oauthScope ?? oauthClientId!
+
+  try {
+    const result = await deviceCodeGrant(oauthTenantId!, oauthClientId!, scope)
+    deviceCodeSessions.set(backendName, {
+      deviceCode: result.deviceCode,
+      tenantId: oauthTenantId!,
+      clientId: oauthClientId!,
+    })
+    return new Response(JSON.stringify({
+      userCode: result.userCode,
+      verificationUri: result.verificationUri,
+      interval: result.interval,
+      backend: backendName,
+    }), { headers: { "Content-Type": "application/json" } })
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Device code request failed"
+    return new Response(JSON.stringify({ error: msg }), {
+      status: 500, headers: { "Content-Type": "application/json" },
+    })
+  }
+}
+
+export async function handleDeviceCodePoll(
+  backendName: string,
+): Promise<Response> {
+  const session = deviceCodeSessions.get(backendName)
+  if (!session) {
+    return new Response(JSON.stringify({ error: "No active device code session" }), {
+      status: 400, headers: { "Content-Type": "application/json" },
+    })
+  }
+
+  try {
+    const result = await pollDeviceCodeToken(session.tenantId, session.clientId, session.deviceCode)
+    if (!result) {
+      return new Response(JSON.stringify({ status: "pending" }), {
+        headers: { "Content-Type": "application/json" },
+      })
+    }
+
+    deviceCodeSessions.delete(backendName)
+    updateBackendTokens(backendName, result.accessToken, result.refreshToken ?? "")
+
+    return new Response(JSON.stringify({ status: "success" }), {
+      headers: { "Content-Type": "application/json" },
+    })
+  } catch (err) {
+    deviceCodeSessions.delete(backendName)
+    const msg = err instanceof Error ? err.message : "Poll failed"
+    return new Response(JSON.stringify({ error: msg }), {
+      status: 500, headers: { "Content-Type": "application/json" },
+    })
+  }
 }
