@@ -79,7 +79,22 @@ async function runAuth(backendName: string, baseURL: string) {
     const page = await browser.newPage()
 
     await page.evaluateOnNewDocument(() => {
-      Object.defineProperty(navigator, "webdriver", { get: () => false })
+      Object.defineProperty(navigator, "webdriver", { get: () => false });
+      (window as any).__capturedToken = null;
+      const origFetch = window.fetch.bind(window);
+      window.fetch = function (input, init) {
+        try {
+          const headers = (init as any)?.headers;
+          if (headers) {
+            const h = headers instanceof Headers ? Object.fromEntries(headers.entries()) : headers;
+            const auth = h["authorization"] || h["Authorization"];
+            if (typeof auth === "string" && auth.startsWith("Bearer ")) {
+              (window as any).__capturedToken = auth.slice(7);
+            }
+          }
+        } catch {}
+        return origFetch(input, init);
+      };
     })
 
     const origin = new URL(baseURL).origin
@@ -141,110 +156,91 @@ async function waitForMsalTokens(
 ): Promise<BrowserAuthResult | null> {
   const start = Date.now()
   let pollCount = 0
-  let logDeadline = 0
 
   while (Date.now() - start < timeoutMs) {
     let currentUrl: string
     try {
       currentUrl = page.url()
     } catch {
-      if (pollCount % 5 === 0) log.warn("page.url() threw (navigation in progress), retrying...")
       await sleep(1000)
       continue
     }
 
     if (!currentUrl.startsWith(origin)) {
-      if (Date.now() > logDeadline) {
-        logDeadline = Date.now() + 5000
-        const title = await page.title().catch(() => "(no title)")
-        log.info("Not on origin URL", { currentUrl, title })
-      }
       await sleep(1000)
       pollCount++
       continue
     }
 
-    if (Date.now() > logDeadline) {
-      logDeadline = Date.now() + 5000
-      log.info("On origin, checking localStorage...", { pollCount })
+    // 1. Try captured token from fetch interception
+    const captured = await page.evaluate(() => (window as any).__capturedToken).catch(() => null)
+    if (captured && captured.length > 200) {
+      log.info("Captured token from fetch")
+      return { accessToken: captured, refreshToken: "" }
     }
 
-    const rawDebug = await page.evaluate(() => {
-      const allKeys: string[] = []
-      for (let i = 0; i < localStorage.length; i++) {
-        allKeys.push(localStorage.key(i)!)
-      }
-      for (const key of allKeys) {
-        if (/[|.]accesstoken[-|]/.test(key)) {
-          const raw = localStorage.getItem(key)
-          if (raw === null) return { key, err: "getItem null" }
-          let val: any
-          try { val = JSON.parse(raw) } catch { return { key, raw: raw.substring(0, 300), err: "JSON.parse failed" } }
-          const topKeys = Object.keys(val)
-          return { key, topKeys, val: JSON.stringify(val).substring(0, 1000) }
+    // 2. Try MSAL PublicClientApplication instance on page
+    const msalToken = await page.evaluate(async () => {
+      const search = (obj: any, depth: number, visited: Set<any>): any => {
+        if (depth > 5 || !obj || typeof obj !== "object" || visited.has(obj)) return null
+        visited.add(obj)
+        if (typeof obj.getAllAccounts === "function" && typeof obj.acquireTokenSilent === "function") {
+          return obj
         }
-      }
-      return { keys: allKeys }
-    }).catch(() => null)
-    log.info("DEBUG ls", rawDebug)
-
-    const tokens = await page.evaluate(() => {
-      const allKeys: string[] = []
-      for (let i = 0; i < localStorage.length; i++) {
-        allKeys.push(localStorage.key(i)!)
-      }
-      for (const key of allKeys) {
-        if (/[|.]accesstoken[-|]/.test(key)) {
-          try {
-            const raw = localStorage.getItem(key)!
-            const val = JSON.parse(raw)
-            const possibleSecret = val.secret ?? val.token ?? val.access_token ?? val.credential ?? val.value ?? val.data
-            if (possibleSecret) {
-              return { key, credentialType: val.credentialType, secret: possibleSecret, foundKey: ["secret","token","access_token","credential","value","data"].find(k => val[k]) }
-            }
-          } catch (e) {
-            const errMsg = e instanceof Error ? e.message : String(e)
-            return { localStorageKeys: allKeys, debugError: { key, err: errMsg } }
+        try {
+          for (const key of Object.getOwnPropertyNames(obj)) {
+            if (key === "constructor") continue
+            try {
+              const result = search(obj[key], depth + 1, visited)
+              if (result) return result
+            } catch {}
           }
-        }
+        } catch {}
+        return null
       }
-      return { localStorageKeys: allKeys }
+      const instance = search(window, 0, new Set())
+      if (!instance) return null
+
+      const accounts = instance.getAllAccounts()
+      if (!accounts || accounts.length === 0) return null
+
+      const scopesToTry = [
+        ["api://fcj-hrapp/Hrapp.User"],
+        ["api://fcj-hrapp/hrapp.user"],
+        ["email", "openid", "profile", "user.read"],
+      ]
+      for (const scopes of scopesToTry) {
+        try {
+          const r = await instance.acquireTokenSilent({ scopes, account: accounts[0], forceRefresh: false })
+          if (r?.accessToken) return { accessToken: r.accessToken, refreshToken: "" }
+        } catch {}
+      }
+      return null
     }).catch(() => null)
+    if (msalToken) {
+      log.info("Got token via MSAL acquireTokenSilent")
+      return msalToken
+    }
 
-    if (tokens) {
-      if ("localStorageKeys" in tokens) {
-        log.info("No MSAL tokens in localStorage", { keys: (tokens as any).localStorageKeys, debug: (tokens as any).debugError })
-      } else {
-        log.info("Found token in localStorage", { key: tokens.key, type: tokens.credentialType })
-
-        const allTokens = await page.evaluate(() => {
-          let at: string | null = null
-          let rt: string | null = null
-          for (let i = 0; i < localStorage.length; i++) {
-            const key = localStorage.key(i)!
-            const raw = localStorage.getItem(key)
-            if (!raw) continue
-            let val: any
-            try { val = JSON.parse(raw) } catch { continue }
-            if (!val || typeof val !== "object") continue
-            const possibleSecret = val.secret ?? val.token ?? val.access_token ?? val.credential ?? val.value ?? val.data
-            if (!possibleSecret) continue
-            if (/[|.]accesstoken[-|]/.test(key)) {
-              at = possibleSecret
-            }
-            if (/[|.]refreshtoken[-|]/.test(key)) {
-              rt = possibleSecret
-            }
+    // 3. Fallback: try localStorage (look for plaintext secret, skip encrypted data)
+    const lsResult = await page.evaluate(() => {
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i)!
+        if (!key.includes("accesstoken")) continue
+        const raw = localStorage.getItem(key)
+        if (!raw) continue
+        try {
+          const val = JSON.parse(raw)
+          if (val.secret && typeof val.secret === "string" && val.secret.length > 200) {
+            return { accessToken: val.secret, refreshToken: "" }
           }
-          if (at) return { accessToken: at, refreshToken: rt ?? "" }
-          return null
-        }).catch(() => null)
-
-        if (allTokens) {
-          log.info("Returning tokens from waitForMsalTokens")
-          return allTokens
-        }
+        } catch {}
       }
+      return null
+    }).catch(() => null)
+    if (lsResult) {
+      log.info("Got token from localStorage (plaintext)")
+      return lsResult
     }
 
     await sleep(2000)
