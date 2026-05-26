@@ -114,7 +114,10 @@ async function tryRequest(
     return retry
   }
 
-  if (!response.ok) throw new BackendError(response.status)
+  if (!response.ok) {
+    const errBody = await response.text().catch(() => "(no body)")
+    throw new BackendError(response.status, "privategpt_error", `PrivateGPT returned ${response.status}: ${errBody.substring(0, 500)}`)
+  }
 
   return response
 }

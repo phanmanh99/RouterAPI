@@ -143,7 +143,7 @@ app.post("/api/auth/browser-auth", async ({ query }) => {
 })
 
 app.get("/api/auth/browser-auth/status", async ({ query }) => {
-  return handleBrowserAuthStatus(query.backend as string)
+  return handleBrowserAuthStatus(query.backend as string, config)
 })
 
 app.post("/api/config/reload", () => {

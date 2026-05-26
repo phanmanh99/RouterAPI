@@ -251,6 +251,7 @@ export async function handleBrowserAuthStart(
 
 export async function handleBrowserAuthStatus(
   backendName: string,
+  config?: AppConfig,
 ): Promise<Response> {
   const session = getAuthStatus(backendName)
   if (!session) {
@@ -261,6 +262,11 @@ export async function handleBrowserAuthStatus(
 
   if (session.status === "success" && session.result) {
     updateBackendTokens(backendName, session.result.accessToken, session.result.refreshToken)
+    // Also update in-memory config for immediate use
+    if (config && config.backends[backendName]) {
+      config.backends[backendName].apiKey = session.result.accessToken
+      config.backends[backendName].refreshToken = session.result.refreshToken ?? ""
+    }
     return new Response(JSON.stringify({ status: "success" }), {
       headers: { "Content-Type": "application/json" },
     })
