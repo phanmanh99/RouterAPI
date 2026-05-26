@@ -84,7 +84,7 @@ export async function authorizeWithBrowser(
     `?client_id=${encodeURIComponent(clientId)}` +
     `&response_type=code` +
     `&redirect_uri=${encodeURIComponent(redirectUri)}` +
-    `&scope=${encodeURIComponent(`openid offline_access ${scope}/.default`)}` +
+    `&scope=${encodeURIComponent(`openid offline_access ${scope}`)}` +
     `&code_challenge=${encodeURIComponent(codeChallenge)}` +
     `&code_challenge_method=S256`
 
@@ -178,7 +178,7 @@ export function buildAuthorizeUrl(
     `?client_id=${encodeURIComponent(clientId)}` +
     `&response_type=code` +
     `&redirect_uri=${encodeURIComponent(redirectUri)}` +
-    `&scope=${encodeURIComponent(`openid offline_access ${scope}/.default`)}` +
+    `&scope=${encodeURIComponent(`openid offline_access ${scope}`)}` +
     `&code_challenge=${encodeURIComponent(codeChallenge)}` +
     `&code_challenge_method=S256` +
     `&state=${encodeURIComponent(state)}`
