@@ -384,7 +384,7 @@ export async function pollDeviceCodeToken(
   tenantId: string,
   clientId: string,
   deviceCode: string,
-): Promise<{ accessToken: string; refreshToken?: string } | null> {
+): Promise<{ accessToken: string; refreshToken?: string } | { interval: number } | null> {
   const url = `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`
   const params = new URLSearchParams({
     grant_type: "urn:ietf:params:oauth:grant-type:device_code",
@@ -407,9 +407,8 @@ export async function pollDeviceCodeToken(
     }
   }
 
-  if (data.error === "authorization_pending" || data.error === "slow_down") {
-    return null
-  }
+  if (data.error === "authorization_pending") return null
+  if (data.error === "slow_down") return { interval: data.interval ?? 10 }
 
   throw new BackendError(res.status, "oauth_failed", `Device code poll failed: ${data.error}`)
 }

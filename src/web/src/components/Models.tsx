@@ -111,13 +111,27 @@ export default function Models() {
           return
         }
         if (data.status === "pending") {
-          setTimeout(poll, interval * 1000)
+          const next = data.interval ?? interval
+          setTimeout(poll, next * 1000)
         }
       } catch {
         setDeviceCodePolling(false)
       }
     }
     setTimeout(poll, interval * 1000)
+  }
+
+  function openDeviceLogin(uri: string) {
+    window.open(uri, "_blank", "noopener,noreferrer")
+  }
+
+  async function copyDeviceCode(code: string) {
+    try {
+      await navigator.clipboard.writeText(code)
+      showToast("✅ Copied!")
+    } catch {
+      showToast("❌ Copy failed")
+    }
   }
 
   function showToast(msg: string) {
@@ -626,19 +640,36 @@ export default function Models() {
             ) : (
               <>
                 <h3 className="text-lg font-semibold text-gray-100 mb-4">{t("models.deviceCodeTitle")}</h3>
-                <p className="text-sm text-gray-400 mb-3">
+
+                <p className="text-sm text-gray-400 mb-2">
                   {t("models.deviceCodeStep", { uri: deviceCodeData.verificationUri })}
                 </p>
-                <a href={deviceCodeData.verificationUri} target="_blank" rel="noopener noreferrer"
-                  className="text-indigo-400 underline text-sm block mb-4 hover:text-indigo-300">
-                  {deviceCodeData.verificationUri}
-                </a>
-                <p className="text-sm text-gray-400 mb-2">{t("models.deviceCodeStep2")}</p>
-                <div className="bg-gray-800 rounded-lg px-6 py-4 mb-4 inline-block border border-gray-700">
-                  <code className="text-3xl font-bold tracking-[0.3em] text-indigo-300 select-all">
-                    {deviceCodeData.userCode}
-                  </code>
+
+                <div className="flex items-center justify-center gap-2 mb-4">
+                  <a href={deviceCodeData.verificationUri} target="_blank" rel="noopener noreferrer"
+                    onClick={() => openDeviceLogin(deviceCodeData.verificationUri)}
+                    className="text-indigo-400 underline text-sm hover:text-indigo-300">
+                    {deviceCodeData.verificationUri}
+                  </a>
+                  <button onClick={() => openDeviceLogin(deviceCodeData.verificationUri)}
+                    className="text-xs bg-indigo-600 hover:bg-indigo-500 text-white px-2 py-1 rounded font-medium">
+                    Open
+                  </button>
                 </div>
+
+                <p className="text-sm text-gray-400 mb-2">{t("models.deviceCodeStep2")}</p>
+                <div className="relative inline-block mb-4">
+                  <div className="bg-gray-800 rounded-lg px-6 py-4 border border-gray-700">
+                    <code className="text-3xl font-bold tracking-[0.3em] text-indigo-300 select-all">
+                      {deviceCodeData.userCode}
+                    </code>
+                  </div>
+                  <button onClick={() => copyDeviceCode(deviceCodeData.userCode)}
+                    className="absolute -top-2 -right-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs px-2 py-1 rounded font-medium">
+                    Copy
+                  </button>
+                </div>
+
                 <p className="text-sm text-gray-400 mb-4">{t("models.deviceCodeStep3")}</p>
                 <div className="flex items-center justify-center gap-2 text-indigo-400">
                   <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24" fill="none">

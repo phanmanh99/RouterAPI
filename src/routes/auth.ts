@@ -202,8 +202,15 @@ export async function handleDeviceCodePoll(
 
   try {
     const result = await pollDeviceCodeToken(session.tenantId, session.clientId, session.deviceCode)
+
     if (!result) {
       return new Response(JSON.stringify({ status: "pending" }), {
+        headers: { "Content-Type": "application/json" },
+      })
+    }
+
+    if ("interval" in result) {
+      return new Response(JSON.stringify({ status: "pending", interval: result.interval }), {
         headers: { "Content-Type": "application/json" },
       })
     }

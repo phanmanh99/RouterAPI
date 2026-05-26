@@ -71,7 +71,7 @@ export async function handleModelsDetail(config: AppConfig) {
             model: b.model,
             baseURL: b.baseURL,
             hasApiKey: b.apiKey.length > 0,
-            hasOauth: !!(b.oauthTenantId && b.oauthClientId && b.oauthClientSecret),
+            hasOauth: !!(b.oauthTenantId && b.oauthClientId),
             reachable,
           }
         }),
