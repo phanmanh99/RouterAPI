@@ -64,11 +64,24 @@ async function runAuth(backendName: string, baseURL: string) {
     browser = await puppeteer.launch({
       headless: false,
       defaultViewport: null,
-      args: ["--start-maximized", `--user-data-dir=${userDataDir}`],
+      executablePath: "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+      args: [
+        "--start-maximized",
+        `--user-data-dir=${userDataDir}`,
+        "--disable-blink-features=AutomationControlled",
+        "--no-first-run",
+        "--disable-default-apps",
+        "--no-default-browser-check",
+      ],
     })
     log.info(`Browser launched, PID: ${browser.process()?.pid}`)
 
     const page = await browser.newPage()
+
+    await page.evaluateOnNewDocument(() => {
+      Object.defineProperty(navigator, "webdriver", { get: () => false })
+    })
+
     const origin = new URL(baseURL).origin
     log.info(`Navigating to ${origin}...`)
 
