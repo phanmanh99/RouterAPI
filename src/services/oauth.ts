@@ -34,7 +34,7 @@ export async function getClientCredentialsToken(
 export async function refreshTokenGrant(
   tenantId: string,
   clientId: string,
-  clientSecret: string,
+  clientSecret: string | undefined,
   refreshToken: string,
   scope: string,
 ): Promise<{ accessToken: string; refreshToken?: string }> {
@@ -42,10 +42,10 @@ export async function refreshTokenGrant(
   const params = new URLSearchParams({
     grant_type: "refresh_token",
     client_id: clientId,
-    client_secret: clientSecret,
     refresh_token: refreshToken,
     scope: `${scope}/.default`,
   })
+  if (clientSecret) params.set("client_secret", clientSecret)
 
   const res = await fetch(url, {
     method: "POST",

@@ -9,7 +9,6 @@ import { getClientCredentialsToken, refreshTokenGrant, authorizeWithBrowser } fr
 
 const MIN_OAUTH_FIELDS: (keyof BackendConfig)[] = [
   "oauthClientId",
-  "oauthClientSecret",
   "oauthTenantId",
 ]
 
@@ -23,12 +22,12 @@ async function acquireToken(backend: BackendConfig): Promise<boolean> {
 
   const tenant = backend.oauthTenantId!
   const clientId = backend.oauthClientId!
-  const clientSecret = backend.oauthClientSecret!
+  const clientSecret = backend.oauthClientSecret
   const scope = backend.oauthScope ?? clientId
 
   // Plan 1: Client Credentials
   try {
-    const token = await getClientCredentialsToken(tenant, clientId, clientSecret, scope)
+    const token = await getClientCredentialsToken(tenant, clientId, clientSecret!, scope)
     backend.apiKey = token
     if (backend.name) {
       updateBackendTokens(backend.name, backend.apiKey, backend.refreshToken ?? "")
@@ -60,7 +59,7 @@ export async function acquireTokenInteractive(backend: BackendConfig): Promise<b
 
   const tenant = backend.oauthTenantId!
   const clientId = backend.oauthClientId!
-  const clientSecret = backend.oauthClientSecret!
+  const clientSecret = backend.oauthClientSecret
   const scope = backend.oauthScope ?? clientId
 
   try {
@@ -206,7 +205,11 @@ export function createPrivateGPTAdapter(): BackendAdapter {
 
       const body = {
         question: JSON.stringify({ conversation: messages }),
-        modelId: backend.model,
+        model_id: backend.model,
+        metadata: {
+          attachments: []
+        },
+        tools:[]
       }
 
       const response = await tryRequest(backend, body)

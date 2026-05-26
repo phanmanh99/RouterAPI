@@ -262,10 +262,20 @@ export async function handleBrowserAuthStatus(
 
   if (session.status === "success" && session.result) {
     updateBackendTokens(backendName, session.result.accessToken, session.result.refreshToken)
+
+    if (session.result.oauthTenantId && session.result.oauthClientId) {
+      saveBackendOAuthConfig(backendName, session.result.oauthClientId, session.result.oauthTenantId, session.result.oauthScope ?? "")
+    }
+
     // Also update in-memory config for immediate use
     if (config && config.backends[backendName]) {
       config.backends[backendName].apiKey = session.result.accessToken
       config.backends[backendName].refreshToken = session.result.refreshToken ?? ""
+      if (session.result.oauthTenantId) {
+        config.backends[backendName].oauthTenantId = session.result.oauthTenantId
+        config.backends[backendName].oauthClientId = session.result.oauthClientId ?? ""
+        config.backends[backendName].oauthScope = session.result.oauthScope
+      }
     }
     return new Response(JSON.stringify({ status: "success" }), {
       headers: { "Content-Type": "application/json" },

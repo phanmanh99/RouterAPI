@@ -23,6 +23,9 @@ const log = createLogger()
 interface BrowserAuthResult {
   accessToken: string
   refreshToken: string
+  oauthTenantId?: string
+  oauthClientId?: string
+  oauthScope?: string
 }
 
 interface Session {
@@ -79,6 +82,10 @@ async function runAuth(backendName: string, baseURL: string) {
     const page = await browser.newPage()
 
     let capturedToken: string | null = null
+    let capturedRefreshToken: string | null = null
+    let capturedTenantId: string | null = null
+    let capturedClientId: string | null = null
+    let capturedScope: string | null = null
 
     page.on("console", (msg) => {
       if (msg.type() === "error" || msg.text().includes("msal") || msg.text().includes("token") || msg.text().includes("auth")) {
@@ -88,12 +95,33 @@ async function runAuth(backendName: string, baseURL: string) {
 
     page.on("request", (req) => {
       try {
+        const url = req.url()
         const auth = req.headers()["authorization"]
         if (typeof auth === "string" && auth.startsWith("Bearer ")) {
           const token = auth.slice(7)
           if (token.length > 200 && !capturedToken) {
             capturedToken = token
-            log.info("Captured Bearer token from request", { url: req.url().substring(0, 80) })
+            log.info("Captured Bearer token from request", { url: url.substring(0, 80) })
+          }
+        }
+        if (url.includes("/oauth2/v2.0/authorize")) {
+          const u = new URL(url)
+          const pathSegments = u.pathname.split("/")
+          capturedTenantId ??= pathSegments[1]
+          capturedClientId ??= u.searchParams.get("client_id")
+          capturedScope ??= u.searchParams.get("scope")
+        }
+      } catch {}
+    })
+
+    page.on("response", async (res) => {
+      try {
+        const url = res.url()
+        if (url.includes("/oauth2/v2.0/token")) {
+          const body = await res.json().catch(() => null)
+          if (body?.refresh_token && !capturedRefreshToken) {
+            capturedRefreshToken = body.refresh_token
+            log.info("Captured refresh token from token endpoint")
           }
         }
       } catch {}
@@ -116,6 +144,10 @@ async function runAuth(backendName: string, baseURL: string) {
     const result = await waitForMsalTokens(page, origin, () => capturedToken)
 
     if (result) {
+      result.refreshToken = capturedRefreshToken ?? result.refreshToken
+      result.oauthTenantId = capturedTenantId ?? undefined
+      result.oauthClientId = capturedClientId ?? undefined
+      result.oauthScope = capturedScope ?? undefined
       log.info(`Auth SUCCESS: accessToken length=${result.accessToken.length}, hasRefresh=${!!result.refreshToken}`)
       const s = sessions.get(backendName)!
       s.status = "success"
