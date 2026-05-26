@@ -169,6 +169,25 @@ async function waitForMsalTokens(
       log.info("On origin, checking localStorage...", { pollCount })
     }
 
+    const rawDebug = await page.evaluate(() => {
+      const allKeys: string[] = []
+      for (let i = 0; i < localStorage.length; i++) {
+        allKeys.push(localStorage.key(i)!)
+      }
+      for (const key of allKeys) {
+        if (/[|.]accesstoken[-|]/.test(key)) {
+          const raw = localStorage.getItem(key)
+          if (raw === null) return { key, err: "getItem null" }
+          let val: any
+          try { val = JSON.parse(raw) } catch { return { key, raw: raw.substring(0, 300), err: "JSON.parse failed" } }
+          const topKeys = Object.keys(val)
+          return { key, topKeys, val: JSON.stringify(val).substring(0, 1000) }
+        }
+      }
+      return { keys: allKeys }
+    }).catch(() => null)
+    log.info("DEBUG ls", rawDebug)
+
     const tokens = await page.evaluate(() => {
       const allKeys: string[] = []
       for (let i = 0; i < localStorage.length; i++) {
@@ -179,8 +198,9 @@ async function waitForMsalTokens(
           try {
             const raw = localStorage.getItem(key)!
             const val = JSON.parse(raw)
-            if (val && typeof val === "object" && "secret" in val && val.secret) {
-              return { key, credentialType: val.credentialType, secret: val.secret, debug: { keys: Object.keys(val), secretType: typeof val.secret, secretLen: String(val.secret).length } }
+            const possibleSecret = val.secret ?? val.token ?? val.access_token ?? val.credential ?? val.value ?? val.data
+            if (possibleSecret) {
+              return { key, credentialType: val.credentialType, secret: possibleSecret, foundKey: ["secret","token","access_token","credential","value","data"].find(k => val[k]) }
             }
           } catch (e) {
             const errMsg = e instanceof Error ? e.message : String(e)
@@ -206,12 +226,14 @@ async function waitForMsalTokens(
             if (!raw) continue
             let val: any
             try { val = JSON.parse(raw) } catch { continue }
-            if (!val || typeof val !== "object" || !("secret" in val) || !val.secret) continue
+            if (!val || typeof val !== "object") continue
+            const possibleSecret = val.secret ?? val.token ?? val.access_token ?? val.credential ?? val.value ?? val.data
+            if (!possibleSecret) continue
             if (/[|.]accesstoken[-|]/.test(key)) {
-              at = val.secret
+              at = possibleSecret
             }
             if (/[|.]refreshtoken[-|]/.test(key)) {
-              rt = val.secret
+              rt = possibleSecret
             }
           }
           if (at) return { accessToken: at, refreshToken: rt ?? "" }
