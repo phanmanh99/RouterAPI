@@ -267,6 +267,86 @@ Dùng cú pháp `${TÊN_BIẾN}` trong bất kỳ trường string nào (`apiKey
 
 ---
 
+## Azure AD OAuth cho PrivateGPT
+
+Khi PrivateGPT sử dụng Azure AD làm identity provider ("Continue with Azure AD"), server hỗ trợ 3 cơ chế OAuth để tự động lấy và duy trì access token.
+
+### Các OAuth flow
+
+| Plan | Flow | Automation | Mô tả |
+|------|------|------------|-------|
+| **Plan 1** | Client Credentials | ✅ Tự động | Server dùng chính identity của mình (`clientId` + `clientSecret`) để lấy token. Không cần user |
+| **Plan 2** | Refresh Token | ✅ Tự động | Dùng `refreshToken` có sẵn để lấy token mới khi hết hạn |
+| **Plan 3** | Authorization Code + PKCE | 🔵 Web UI (click "Auth") | User đăng nhập Microsoft qua trình duyệt, lấy token + refresh token |
+
+### Cấu hình Azure Portal
+
+1. **Tìm PrivateGPT App Registration** trong Azure AD → App registrations, ghi lại **Application (client) ID**
+2. **Tạo App Registration** cho server (`routerapi-server`)
+   - Ghi lại Client ID, tạo Client Secret
+   - Thêm redirect URI: `http://localhost` (loại SPA/public client)
+3. **API Permissions** → Add permission → My APIs → Chọn PrivateGPT app → `user_impersonation` → Grant admin consent
+4. **Ghi lại các giá trị**:
+   - `AZURE_TENANT_ID` — Directory (tenant) ID
+   - `AZURE_CLIENT_ID` — Client ID của app server
+   - `AZURE_CLIENT_SECRET` — Client Secret của app server
+   - `PRIVATEGPT_APP_CLIENT_ID` — Client ID của PrivateGPT app
+
+### Cấu hình models.json
+
+```json
+"privategpt-4o": {
+  "provider": "privategpt",
+  "model": "azure-gpt-4o",
+  "apiKey": "",
+  "baseURL": "https://privategpt.fptconsulting.co.jp",
+  "refreshToken": "${PRIVATEGPT_REFRESH_TOKEN}",
+  "oauthTenantId": "${AZURE_TENANT_ID}",
+  "oauthClientId": "${AZURE_CLIENT_ID}",
+  "oauthClientSecret": "${AZURE_CLIENT_SECRET}",
+  "oauthScope": "${PRIVATEGPT_APP_CLIENT_ID}"
+}
+```
+
+| Trường | Vai trò |
+|--------|---------|
+| `apiKey` | Để trống, server tự động điền từ OAuth |
+| `refreshToken` | (Tùy chọn) Dùng cho Plan 2 nếu đã có refresh token |
+| `oauthTenantId` | Tenant ID của Azure AD |
+| `oauthClientId` | Client ID của app server đã đăng ký |
+| `oauthClientSecret` | Client Secret của app server |
+| `oauthScope` | Scope = Client ID của PrivateGPT app (để lấy token đúng audience) |
+
+### Cách hoạt động
+
+```
+Server khởi động / request đầu tiên
+  │
+  ├─ apiKey trống?
+  │   YES → Plan 1: Client Credentials
+  │       ├─ Thành công → lưu access_token, gọi API
+  │       └─ Thất bại → Plan 2: Refresh Token (nếu có)
+  │           ├─ Thành công → lưu access_token, gọi API
+  │           └─ Thất bại → cần Plan 3 qua Web UI
+  │
+  ├─ 401 từ PrivateGPT?
+  │   ├─ Plan 1 → Plan 2 → retry
+  │   └─ Thất bại → cần re-auth qua Web UI
+  │
+  └─ Web UI: Models → click "Auth" → login Microsoft → lưu token
+```
+
+### Xác thực qua Web UI
+
+1. Vào trang **Models** → chọn backend PrivateGPT
+2. Click nút **Auth** (chỉ hiện khi backend có cấu hình OAuth)
+3. Trình duyệt chuyển hướng sang Microsoft login
+4. Đăng nhập tài khoản có quyền truy cập PrivateGPT
+5. Tự động quay lại Web UI → toast "✅ OAuth đã xác thực"
+6. Server đã có `access_token` và `refresh_token`, sẵn sàng hoạt động
+
+---
+
 ## API endpoints
 
 ### OpenAI-compatible
@@ -292,6 +372,8 @@ Dùng cú pháp `${TÊN_BIẾN}` trong bất kỳ trường string nào (`apiKey
 | `PUT` | `/api/router-models/:id` | Cập nhật router model |
 | `DELETE` | `/api/router-models/:id` | Xoá router model |
 | `POST` | `/api/router-models` | Tạo router model mới |
+| `GET` | `/api/auth/start?backend=` | Bắt đầu OAuth Authorization Code flow, trả về authorize URL |
+| `GET` | `/api/auth/callback` | Callback từ Microsoft sau khi login, exchange code lấy tokens |
 | `POST` | `/api/config/reload` | Reload models.json từ disk |
 
 ---
@@ -316,7 +398,7 @@ bun run dev:web   # Mở http://localhost:5173 (proxy API sang backend)
 |-------|-------|
 | **Dashboard** | Thống kê server (số models, backends, uptime), trạng thái kết nối từng backend, tab nhật ký |
 | **Chat** | Playground chat — chọn model, tuỳ chọn stream/non-stream, xem fallback chain, xem response realtime |
-| **Models** | Danh sách router models + backends. **Thêm, sửa, xoá, copy** models và backends. Kiểm tra kết nối từng backend |
+| **Models** | Danh sách router models + backends. **Thêm, sửa, xoá, copy** models và backends. Kiểm tra kết nối từng backend. **Auth** — xác thực OAuth với Microsoft cho PrivateGPT backend |
 | **Settings** | Cấu hình server (port, host, auth, logging), chuyển ngôn ngữ (English / Tiếng Việt) |
 
 ### Công nghệ
