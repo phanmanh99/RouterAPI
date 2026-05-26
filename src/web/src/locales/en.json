@@ -110,6 +110,10 @@
   "models.authBtn": "Auth",
   "models.authSuccess": "OAuth authenticated",
   "models.authError": "Authentication failed",
+  "models.discoverOAuth": "Discover OAuth",
+  "models.discovering": "Discovering...",
+  "models.discoverSuccess": "OAuth config discovered",
+  "models.discoverError": "Could not discover OAuth config",
 
   "settings.title": "Settings",
   "settings.loading": "Loading settings...",

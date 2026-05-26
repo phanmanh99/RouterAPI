@@ -1,6 +1,6 @@
 import type { AppConfig } from "../config/types"
 import { updateBackendTokens } from "../config/loader"
-import { createAuthSession, consumeAuthSession, buildAuthorizeUrl, exchangeCode } from "../services/oauth"
+import { createAuthSession, consumeAuthSession, buildAuthorizeUrl, exchangeCode, discoverOAuthConfig } from "../services/oauth"
 
 export async function handleAuthStart(
   backendName: string,
@@ -98,4 +98,27 @@ export async function handleAuthCallback(
       { status: 400, headers: { "Content-Type": "text/html; charset=utf-8" } },
     )
   }
+}
+
+export async function handleAuthDiscover(
+  baseURL: string,
+): Promise<Response> {
+  if (!baseURL) {
+    return new Response(
+      JSON.stringify({ error: "Missing baseURL query parameter" }),
+      { status: 400, headers: { "Content-Type": "application/json" } },
+    )
+  }
+
+  const result = await discoverOAuthConfig(baseURL)
+  if (!result) {
+    return new Response(
+      JSON.stringify({ error: "Could not discover OAuth config from this URL" }),
+      { status: 404, headers: { "Content-Type": "application/json" } },
+    )
+  }
+
+  return new Response(JSON.stringify(result), {
+    headers: { "Content-Type": "application/json" },
+  })
 }

@@ -57,6 +57,13 @@ export default function Models() {
   const [testResults, setTestResults] = useState<Record<string, BackendTestResult>>({})
   const [testing, setTesting] = useState<Record<string, boolean>>({})
 
+  const [discovering, setDiscovering] = useState(false)
+  const [discoveredConfig, setDiscoveredConfig] = useState<{
+    oauthClientId: string
+    oauthTenantId: string
+    oauthScope: string
+  } | null>(null)
+
   const [showAddBackend, setShowAddBackend] = useState(false)
   const [addBackendForm, setAddBackendForm] = useState<AddBackendForm>(defaultAddBackend)
   const [showAddRouter, setShowAddRouter] = useState(false)
@@ -88,6 +95,40 @@ export default function Models() {
       window.location.href = data.authorizeUrl
     } catch (err) {
       showToast(`${t("models.authError")}: ${err instanceof Error ? err.message : "?"}`)
+    }
+  }
+
+  async function handleDiscover(baseURL: string) {
+    setDiscovering(true)
+    setDiscoveredConfig(null)
+    try {
+      const res = await fetch(`/api/auth/discover?baseURL=${encodeURIComponent(baseURL)}`)
+      if (!res.ok) { const e = await res.json(); throw new Error(e.error) }
+      const data = await res.json()
+      setDiscoveredConfig(data)
+      showToast(`✅ ${t("models.discoverSuccess")}`)
+    } catch {
+      showToast(`❌ ${t("models.discoverError")}`)
+    } finally {
+      setDiscovering(false)
+    }
+  }
+
+  async function handleApplyDiscovery(backendName: string) {
+    if (!discoveredConfig) return
+    try {
+      const res = await fetch(`/api/backends/${encodeURIComponent(backendName)}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(discoveredConfig),
+      })
+      if (!res.ok) throw new Error()
+      showToast(`✅ ${t("models.saved")}`)
+      setDiscoveredConfig(null)
+      cancelBackendEdit()
+      fetchModels()
+    } catch {
+      showToast(`❌ ${t("models.saveError")}`)
     }
   }
 
@@ -153,6 +194,7 @@ export default function Models() {
   function cancelBackendEdit() {
     setEditingBackendKey(null)
     setBackendForm(null)
+    setDiscoveredConfig(null)
   }
 
   async function saveBackendEdit(backendName: string) {
@@ -441,6 +483,42 @@ export default function Models() {
                                   onChange={(e) => setBackendForm({ ...bForm, apiKey: e.target.value })}
                                   placeholder="********" className="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1 text-sm text-gray-200 font-mono" />
                               </div>
+                              {bForm.provider === "privategpt" && (
+                                <div className="border-t border-gray-700 pt-3 mt-1">
+                                  <div className="flex items-center justify-between mb-2">
+                                    <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">OAuth</span>
+                                    <Button variant="ghost" size="sm"
+                                      icon={<LogIn size={12} />}
+                                      loading={discovering}
+                                      onClick={() => handleDiscover(bForm.baseURL)}
+                                      disabled={!bForm.baseURL || bForm.baseURL === "http://"}>
+                                      {t("models.discoverOAuth")}
+                                    </Button>
+                                  </div>
+                                  {discoveredConfig && (
+                                    <div className="bg-gray-800/60 rounded-lg p-3 space-y-2 border border-indigo-800/30">
+                                      <div className="text-xs text-gray-400">
+                                        <span className="text-gray-500">Client ID: </span>
+                                        <code className="text-emerald-400 break-all">{discoveredConfig.oauthClientId}</code>
+                                      </div>
+                                      <div className="text-xs text-gray-400">
+                                        <span className="text-gray-500">Tenant ID: </span>
+                                        <code className="text-emerald-400 break-all">{discoveredConfig.oauthTenantId}</code>
+                                      </div>
+                                      <div className="text-xs text-gray-400">
+                                        <span className="text-gray-500">Scope: </span>
+                                        <code className="text-emerald-400 break-all">{discoveredConfig.oauthScope}</code>
+                                      </div>
+                                      <div className="flex justify-end pt-1">
+                                        <Button variant="primary" size="sm"
+                                          onClick={() => handleApplyDiscovery(b.name)}>
+                                          {t("models.save")}
+                                        </Button>
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                              )}
                             </div>
                           ) : (
                             <div className="space-y-1">

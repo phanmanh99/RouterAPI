@@ -286,6 +286,51 @@ async function startCallbackServer(
   })
 }
 
+export async function discoverOAuthConfig(
+  baseURL: string,
+): Promise<{ oauthClientId: string; oauthTenantId: string; oauthScope: string } | null> {
+  try {
+    const html = await fetch(baseURL, { signal: AbortSignal.timeout(10_000) })
+    if (!html.ok) return null
+    const text = await html.text()
+
+    const scriptPattern = /<script[^>]+src="([^"]+)"[^>]*>/g
+    const jsUrls: string[] = []
+    let match: RegExpExecArray | null
+    while ((match = scriptPattern.exec(text)) !== null) {
+      const src = match[1]
+      if (src.includes("index-") || src.includes("vendor-msal")) {
+        jsUrls.push(new URL(src, baseURL).href)
+      }
+    }
+
+    if (jsUrls.length === 0) return null
+
+    let jsContent = ""
+    for (const url of jsUrls) {
+      const res = await fetch(url, { signal: AbortSignal.timeout(10_000) })
+      if (res.ok) jsContent += await res.text()
+    }
+
+    if (!jsContent) return null
+
+    const clientIdMatch = jsContent.match(/clientId:\x60([^\x60]+)\x60/)
+    if (!clientIdMatch) return null
+    const oauthClientId = clientIdMatch[1]
+
+    const authorityMatch = jsContent.match(/authority:\x60[^\x60]*login\.microsoftonline\.com\/([^\x60\/]+)\x60/)
+    if (!authorityMatch) return null
+    const oauthTenantId = authorityMatch[1]
+
+    const scopeMatch = jsContent.match(/api:\/\/[\w-]+\/[\w.-]+/)
+    const oauthScope = scopeMatch ? scopeMatch[0] : oauthClientId
+
+    return { oauthClientId, oauthTenantId, oauthScope }
+  } catch {
+    return null
+  }
+}
+
 function openBrowser(url: string): void {
   const cmd = process.platform === "darwin" ? "open"
     : process.platform === "win32" ? "start"

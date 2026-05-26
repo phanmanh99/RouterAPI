@@ -299,7 +299,7 @@ Khi PrivateGPT sử dụng Azure AD làm identity provider ("Continue with Azure
   "provider": "privategpt",
   "model": "azure-gpt-4o",
   "apiKey": "",
-  "baseURL": "https://privategpt.fptconsulting.co.jp",
+  "baseURL": "https://api.my-service.com/",
   "refreshToken": "${PRIVATEGPT_REFRESH_TOKEN}",
   "oauthTenantId": "${AZURE_TENANT_ID}",
   "oauthClientId": "${AZURE_CLIENT_ID}",

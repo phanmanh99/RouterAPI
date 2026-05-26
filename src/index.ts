@@ -17,7 +17,7 @@ import {
   handleCreateRouterModel,
   handleDeleteRouterModel,
 } from "./routes/admin"
-import { handleAuthStart, handleAuthCallback } from "./routes/auth"
+import { handleAuthStart, handleAuthCallback, handleAuthDiscover } from "./routes/auth"
 import { createApiKeyValidator } from "./middleware/auth"
 import { Logger } from "./utils/logger"
 import { join, dirname } from "path"
@@ -124,6 +124,10 @@ app.get("/api/auth/start", async ({ query, request }) => {
 
 app.get("/api/auth/callback", async ({ request }) => {
   return handleAuthCallback(new URL(request.url))
+})
+
+app.get("/api/auth/discover", async ({ query }) => {
+  return handleAuthDiscover(query.baseURL as string)
 })
 
 app.post("/api/config/reload", () => {

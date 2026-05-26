@@ -110,6 +110,10 @@
   "models.authBtn": "Xác thực",
   "models.authSuccess": "OAuth đã xác thực",
   "models.authError": "Xác thực thất bại",
+  "models.discoverOAuth": "Tự động phát hiện OAuth",
+  "models.discovering": "Đang phát hiện...",
+  "models.discoverSuccess": "Đã phát hiện cấu hình OAuth",
+  "models.discoverError": "Không thể phát hiện cấu hình OAuth",
 
   "settings.title": "Cài đặt",
   "settings.loading": "Đang tải...",
