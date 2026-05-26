@@ -191,7 +191,7 @@ export function handleUpdateRouterModel(
 }
 
 export function handleCreateBackend(
-  body: { name: string; provider: string; model: string; apiKey: string; baseURL: string },
+  body: { name: string; provider: string; model: string; apiKey: string; baseURL: string } & Partial<BackendConfig>,
   config: AppConfig,
 ) {
   if (config.backends[body.name]) {
@@ -206,6 +206,11 @@ export function handleCreateBackend(
     model: body.model,
     apiKey: body.apiKey,
     baseURL: body.baseURL,
+    refreshToken: body.refreshToken,
+    oauthClientId: body.oauthClientId,
+    oauthClientSecret: body.oauthClientSecret,
+    oauthTenantId: body.oauthTenantId,
+    oauthScope: body.oauthScope,
   }
   saveConfig(config)
 

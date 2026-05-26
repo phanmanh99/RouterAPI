@@ -9,10 +9,13 @@
     "privategpt-4o": {
       "provider": "privategpt",
       "model": "azure-gpt-4o",
-      "apiKey": "${PRIVATEGPT_API_KEY}",
-      "baseURL": "{PRIVATEGPT_URL}",
+      "apiKey": "",
+      "baseURL": "${PRIVATEGPT_URL}",
       "refreshToken": "${PRIVATEGPT_REFRESH_TOKEN}",
-      "refreshEndpoint": "/api/auth/refresh"
+      "oauthTenantId": "${AZURE_TENANT_ID}",
+      "oauthClientId": "${AZURE_CLIENT_ID}",
+      "oauthClientSecret": "${AZURE_CLIENT_SECRET}",
+      "oauthScope": "${PRIVATEGPT_APP_CLIENT_ID}"
     }
   },
   "router_models": {

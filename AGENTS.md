@@ -84,6 +84,12 @@ opencode-provider-server/
 | Phase 4 — Image & Audio | ⬜ Not started |
 | Phase 5 — Production hardening | ⬜ Not started |
 
+## Workflow
+
+- Trước khi implement task lớn, tạo `PLAN.md` ở root với kế hoạch chi tiết (file thay đổi, flow, backward compatibility).
+- Trong quá trình implement, đọc `PLAN.md` để tuân thủ plan.
+- Sau khi hoàn thành, xoá `PLAN.md` và cập nhật `README.md` nếu cần.
+
 ## Conventions
 
 - No comments in production code.

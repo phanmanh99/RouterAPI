@@ -18,6 +18,11 @@ function resolveBackendEnvVars(backend: BackendConfig): BackendConfig {
     ...backend,
     apiKey: resolveEnvVars(backend.apiKey),
     baseURL: resolveEnvVars(backend.baseURL),
+    refreshToken: backend.refreshToken ? resolveEnvVars(backend.refreshToken) : undefined,
+    oauthClientId: backend.oauthClientId ? resolveEnvVars(backend.oauthClientId) : undefined,
+    oauthClientSecret: backend.oauthClientSecret ? resolveEnvVars(backend.oauthClientSecret) : undefined,
+    oauthTenantId: backend.oauthTenantId ? resolveEnvVars(backend.oauthTenantId) : undefined,
+    oauthScope: backend.oauthScope ? resolveEnvVars(backend.oauthScope) : undefined,
   }
 }
 

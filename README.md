@@ -155,8 +155,13 @@ cp models.example.json models.json
     "privategpt-4o": {
       "provider": "privategpt",
       "model": "azure-gpt-4o",
-      "apiKey": "${PRIVATEGPT_API_KEY}",
-      "baseURL": "https://privategpt.co"
+      "apiKey": "",
+      "baseURL": "https://privategpt.co",
+      "refreshToken": "${PRIVATEGPT_REFRESH_TOKEN}",
+      "oauthTenantId": "${AZURE_TENANT_ID}",
+      "oauthClientId": "${AZURE_CLIENT_ID}",
+      "oauthClientSecret": "${AZURE_CLIENT_SECRET}",
+      "oauthScope": "${PRIVATEGPT_APP_CLIENT_ID}"
     }
   },
   "router_models": {
@@ -189,8 +194,13 @@ cp models.example.json models.json
 |--------|----------|-------|
 | `provider` | ✅ | Loại adapter: `ollama` hoặc `privategpt` |
 | `model` | ✅ | Tên model gửi lên upstream |
-| `apiKey` | ✅ | Có thể để trống. Hỗ trợ `${ENV_VAR}` |
+| `apiKey` | ✅ | Có thể để trống. Hỗ trợ `${ENV_VAR}`. Dùng OAuth để tự động lấy token |
 | `baseURL` | ✅ | URL đầy đủ. **Không có giá trị mặc định** |
+| `refreshToken` | ✗ | Refresh token cho OAuth (Plan 2). Hỗ trợ `${ENV_VAR}` |
+| `oauthTenantId` | ✗ | Azure AD Tenant ID. Hỗ trợ `${ENV_VAR}` |
+| `oauthClientId` | ✗ | Azure AD App Client ID. Hỗ trợ `${ENV_VAR}` |
+| `oauthClientSecret` | ✗ | Azure AD Client Secret. Hỗ trợ `${ENV_VAR}` |
+| `oauthScope` | ✗ | Scope cho OAuth (mặc định = `oauthClientId`). Hỗ trợ `${ENV_VAR}` |
 
 ### Router Model
 
@@ -244,12 +254,14 @@ File `*.log` đã được thêm vào `.gitignore`.
 
 ### Biến môi trường
 
-Dùng cú pháp `${TÊN_BIẾN}` trong `apiKey` hoặc `baseURL`. Server tự động resolve khi khởi động:
+Dùng cú pháp `${TÊN_BIẾN}` trong bất kỳ trường string nào (`apiKey`, `baseURL`, `refreshToken`, `oauthClientId`, ...). Server tự động resolve khi khởi động:
 
 ```json
 {
   "apiKey": "${OPENAI_API_KEY}",
-  "baseURL": "${CUSTOM_ENDPOINT}"
+  "baseURL": "${CUSTOM_ENDPOINT}",
+  "oauthTenantId": "${AZURE_TENANT_ID}",
+  "oauthClientId": "${AZURE_CLIENT_ID}"
 }
 ```
 

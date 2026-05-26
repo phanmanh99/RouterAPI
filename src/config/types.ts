@@ -5,7 +5,10 @@ export interface BackendConfig {
   baseURL: string
   name?: string
   refreshToken?: string
-  refreshEndpoint?: string
+  oauthClientId?: string
+  oauthClientSecret?: string
+  oauthTenantId?: string
+  oauthScope?: string
 }
 
 export interface RouterModelConfig {

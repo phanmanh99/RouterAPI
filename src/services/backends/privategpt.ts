@@ -5,29 +5,73 @@ import { readLines } from "../../utils/stream"
 import { createContentChunk, createStopChunk, encodeSSE } from "../../utils/sse"
 import type { BackendAdapter } from "./types"
 import { updateBackendTokens } from "../../config/loader"
+import { getClientCredentialsToken, refreshTokenGrant, authorizeWithBrowser } from "../oauth"
 
-async function refreshAccessToken(backend: BackendConfig): Promise<boolean> {
-  if (!backend.refreshToken || !backend.refreshEndpoint) return false
+const MIN_OAUTH_FIELDS: (keyof BackendConfig)[] = [
+  "oauthClientId",
+  "oauthClientSecret",
+  "oauthTenantId",
+]
 
+function hasOAuthConfig(backend: BackendConfig): boolean {
+  return MIN_OAUTH_FIELDS.every((f) => backend[f])
+}
+
+// Plan 1 → Plan 2: tự động
+async function acquireToken(backend: BackendConfig): Promise<boolean> {
+  if (!hasOAuthConfig(backend)) return false
+
+  const tenant = backend.oauthTenantId!
+  const clientId = backend.oauthClientId!
+  const clientSecret = backend.oauthClientSecret!
+  const scope = backend.oauthScope ?? clientId
+
+  // Plan 1: Client Credentials
   try {
-    const res = await fetch(`${backend.baseURL}${backend.refreshEndpoint}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ refreshToken: backend.refreshToken }),
-    })
-
-    if (!res.ok) return false
-
-    const data = await res.json()
-    if (!data.accessToken) return false
-
-    backend.apiKey = data.accessToken
-    backend.refreshToken = data.refreshToken ?? backend.refreshToken
-
+    const token = await getClientCredentialsToken(tenant, clientId, clientSecret, scope)
+    backend.apiKey = token
     if (backend.name) {
       updateBackendTokens(backend.name, backend.apiKey, backend.refreshToken ?? "")
     }
+    return true
+  } catch {}
 
+  // Plan 2: Refresh Token
+  if (backend.refreshToken) {
+    try {
+      const result = await refreshTokenGrant(tenant, clientId, clientSecret, backend.refreshToken, scope)
+      backend.apiKey = result.accessToken
+      if (result.refreshToken) {
+        backend.refreshToken = result.refreshToken
+      }
+      if (backend.name) {
+        updateBackendTokens(backend.name, backend.apiKey, backend.refreshToken ?? "")
+      }
+      return true
+    } catch {}
+  }
+
+  return false
+}
+
+// Plan 3: interactive (on-demand)
+export async function acquireTokenInteractive(backend: BackendConfig): Promise<boolean> {
+  if (!hasOAuthConfig(backend)) return false
+
+  const tenant = backend.oauthTenantId!
+  const clientId = backend.oauthClientId!
+  const clientSecret = backend.oauthClientSecret!
+  const scope = backend.oauthScope ?? clientId
+
+  try {
+    const result = await authorizeWithBrowser(tenant, clientId, clientSecret, scope)
+    backend.apiKey = result.accessToken
+    if (result.refreshToken) {
+      backend.refreshToken = result.refreshToken
+    }
+    if (backend.name) {
+      updateBackendTokens(backend.name, backend.apiKey, backend.refreshToken ?? "")
+    }
     return true
   } catch {
     return false
@@ -50,9 +94,11 @@ async function tryRequest(
     body: JSON.stringify(body),
   })
 
-  if (response.status === 401 && backend.refreshToken) {
-    const refreshed = await refreshAccessToken(backend)
-    if (!refreshed) throw new BackendError(401, "auth_failed", "Token expired and refresh failed")
+  if (response.status === 401) {
+    const refreshed = await acquireToken(backend)
+    if (!refreshed) {
+      throw new BackendError(401, "auth_failed", "Token expired. Run interactive auth or check OAuth config")
+    }
 
     const retry = await fetch(url, {
       method: "POST",
@@ -144,6 +190,17 @@ function transformToSSEStream(
 export function createPrivateGPTAdapter(): BackendAdapter {
   return {
     async chat(backend: BackendConfig, messages: Message[], params: Partial<ChatRequest>) {
+      if (!backend.apiKey && hasOAuthConfig(backend)) {
+        const ok = await acquireToken(backend)
+        if (!ok) {
+          throw new BackendError(
+            401,
+            "auth_needed",
+            "No valid token. Configure OAuth credentials or call acquireTokenInteractive()",
+          )
+        }
+      }
+
       const body = {
         question: JSON.stringify({ conversation: messages }),
         modelId: backend.model,

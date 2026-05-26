@@ -1,0 +1,210 @@
+import { BackendError } from "../utils/errors"
+
+export async function getClientCredentialsToken(
+  tenantId: string,
+  clientId: string,
+  clientSecret: string,
+  scope: string,
+): Promise<string> {
+  const url = `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`
+  const params = new URLSearchParams({
+    grant_type: "client_credentials",
+    client_id: clientId,
+    client_secret: clientSecret,
+    scope: `${scope}/.default`,
+  })
+
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: params,
+  })
+
+  if (!res.ok) {
+    const text = await res.text()
+    throw new BackendError(res.status, "oauth_failed", `Client credentials grant failed: ${text}`)
+  }
+
+  const data = await res.json()
+  if (!data.access_token) throw new BackendError(500, "oauth_failed", "No access_token in client credentials response")
+
+  return data.access_token
+}
+
+export async function refreshTokenGrant(
+  tenantId: string,
+  clientId: string,
+  clientSecret: string,
+  refreshToken: string,
+  scope: string,
+): Promise<{ accessToken: string; refreshToken?: string }> {
+  const url = `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`
+  const params = new URLSearchParams({
+    grant_type: "refresh_token",
+    client_id: clientId,
+    client_secret: clientSecret,
+    refresh_token: refreshToken,
+    scope: `${scope}/.default`,
+  })
+
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: params,
+  })
+
+  if (!res.ok) {
+    const text = await res.text()
+    throw new BackendError(res.status, "oauth_failed", `Refresh token grant failed: ${text}`)
+  }
+
+  const data = await res.json()
+  if (!data.access_token) throw new BackendError(500, "oauth_failed", "No access_token in refresh response")
+
+  return {
+    accessToken: data.access_token,
+    refreshToken: data.refresh_token ?? undefined,
+  }
+}
+
+export async function authorizeWithBrowser(
+  tenantId: string,
+  clientId: string,
+  clientSecret: string,
+  scope: string,
+): Promise<{ accessToken: string; refreshToken?: string }> {
+  const port = await findAvailablePort()
+  const redirectUri = `http://localhost:${port}/callback`
+
+  const codeVerifier = generateCodeVerifier()
+  const codeChallenge = await generateCodeChallenge(codeVerifier)
+
+  const authorizeUrl =
+    `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/authorize` +
+    `?client_id=${encodeURIComponent(clientId)}` +
+    `&response_type=code` +
+    `&redirect_uri=${encodeURIComponent(redirectUri)}` +
+    `&scope=${encodeURIComponent(`openid offline_access ${scope}/.default`)}` +
+    `&code_challenge=${encodeURIComponent(codeChallenge)}` +
+    `&code_challenge_method=S256`
+
+  console.log(`\n🔐 Opening browser for Microsoft authentication...`)
+  console.log(`   Redirect URI: ${redirectUri}\n`)
+
+  const code = await startCallbackServer(port, authorizeUrl)
+
+  if (!code) throw new BackendError(500, "oauth_failed", "No authorization code received or user cancelled")
+
+  const tokenUrl = `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`
+  const params = new URLSearchParams({
+    grant_type: "authorization_code",
+    client_id: clientId,
+    client_secret: clientSecret,
+    code,
+    redirect_uri: redirectUri,
+    code_verifier: codeVerifier,
+  })
+
+  const res = await fetch(tokenUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: params,
+  })
+
+  if (!res.ok) {
+    const text = await res.text()
+    throw new BackendError(res.status, "oauth_failed", `Token exchange failed: ${text}`)
+  }
+
+  const data = await res.json()
+  if (!data.access_token) throw new BackendError(500, "oauth_failed", "No access_token in token exchange response")
+
+  return {
+    accessToken: data.access_token,
+    refreshToken: data.refresh_token ?? undefined,
+  }
+}
+
+async function findAvailablePort(): Promise<number> {
+  const server = Bun.serve({
+    port: 0,
+    hostname: "localhost",
+    fetch() {
+      return new Response("")
+    },
+  })
+  const port = server.port!
+  server.stop()
+  return port
+}
+
+function generateCodeVerifier(): string {
+  const bytes = new Uint8Array(48)
+  crypto.getRandomValues(bytes)
+  return btoa(String.fromCharCode(...bytes))
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "")
+}
+
+async function generateCodeChallenge(verifier: string): Promise<string> {
+  const hash = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier))
+  return btoa(String.fromCharCode(...new Uint8Array(hash)))
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "")
+}
+
+async function startCallbackServer(
+  port: number,
+  authorizeUrl: string,
+): Promise<string | null> {
+  return new Promise((resolve) => {
+    const server = Bun.serve({
+      port,
+      hostname: "localhost",
+      async fetch(req) {
+        const url = new URL(req.url)
+        if (url.pathname === "/callback") {
+          const code = url.searchParams.get("code")
+          const error = url.searchParams.get("error")
+
+          if (error) {
+            resolve(null)
+            return new Response(`Authentication failed: ${error}`, { status: 400 })
+          }
+
+          if (code) {
+            resolve(code)
+            return new Response("✅ Authentication successful! You can close this tab.", {
+              headers: { "Content-Type": "text/plain; charset=utf-8" },
+            })
+          }
+
+          resolve(null)
+          return new Response("No authorization code received", { status: 400 })
+        }
+
+        return new Response("Not found", { status: 404 })
+      },
+      error() {
+        resolve(null)
+      },
+    })
+
+    openBrowser(authorizeUrl)
+
+    setTimeout(() => {
+      try { server.stop() } catch {}
+      resolve(null)
+    }, 300_000)
+  })
+}
+
+function openBrowser(url: string): void {
+  const cmd = process.platform === "darwin" ? "open"
+    : process.platform === "win32" ? "start"
+    : "xdg-open"
+
+  Bun.spawn([cmd, url], { stdout: "ignore", stderr: "ignore" })
+}
