@@ -175,7 +175,7 @@ async function waitForMsalTokens(
         allKeys.push(localStorage.key(i)!)
       }
       for (const key of allKeys) {
-        if (key.includes(".accesstoken-") || key.includes(".refreshtoken-")) {
+        if (key.includes("|accesstoken|") || key.includes(".accesstoken-")) {
           try {
             const val = JSON.parse(localStorage.getItem(key)!)
             if (val.secret) return { key, credentialType: val.credentialType, secret: val.secret }
@@ -196,13 +196,13 @@ async function waitForMsalTokens(
           let rt: string | null = null
           for (let i = 0; i < localStorage.length; i++) {
             const key = localStorage.key(i)!
-            if (key.includes(".accesstoken-")) {
+            if (key.includes("|accesstoken|") || key.includes(".accesstoken-")) {
               try {
                 const val = JSON.parse(localStorage.getItem(key)!)
                 if (val.secret) at = val.secret
               } catch {}
             }
-            if (key.includes(".refreshtoken-")) {
+            if (key.includes("|refreshtoken|") || key.includes(".refreshtoken-")) {
               try {
                 const val = JSON.parse(localStorage.getItem(key)!)
                 if (val.secret) rt = val.secret
